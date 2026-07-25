@@ -1,0 +1,102 @@
+export type FlagType = "boolean" | "string";
+
+export interface FlagDescriptor {
+  name: string;
+  type: FlagType;
+  summary: string;
+  allowed?: readonly string[];
+  required?: boolean;
+  hidden?: boolean;
+}
+
+export interface CommandDescriptor {
+  name: string;
+  summary: string;
+  flags: readonly FlagDescriptor[];
+}
+
+const HELP_FLAGS = [
+  { name: "help", type: "boolean", summary: "Show human help" },
+  { name: "help-json", type: "boolean", summary: "Show machine-readable help" },
+] as const satisfies readonly FlagDescriptor[];
+
+const LAYER_FLAG = {
+  name: "layer",
+  type: "string",
+  summary: "Filter to a binding layer: karabiner|skhd|nvim",
+  allowed: ["karabiner", "skhd", "nvim"],
+} as const satisfies FlagDescriptor;
+
+export const TOP_LEVEL_FLAGS = [
+  { name: "help", type: "boolean", summary: "Show human help" },
+  {
+    name: "agent-help",
+    type: "boolean",
+    summary: "Show operator-oriented help",
+    hidden: true,
+  },
+  {
+    name: "agent-teaser",
+    type: "boolean",
+    summary: "Show a one-line capability summary",
+    hidden: true,
+  },
+] as const satisfies readonly FlagDescriptor[];
+
+export const COMMANDS = [
+  {
+    name: "list-bindings",
+    summary: "List keyboard bindings across all layers",
+    flags: [
+      ...HELP_FLAGS,
+      LAYER_FLAG,
+      {
+        name: "modifier",
+        type: "string",
+        summary: "Filter by canonical modifier or modifier combo",
+      },
+      {
+        name: "format",
+        type: "string",
+        summary: "Output format: json|yaml|table (default json)",
+        allowed: ["json", "yaml", "table"],
+      },
+    ],
+  },
+  {
+    name: "show-cheatsheet",
+    summary: "Show Markdown bindings grouped by layer priority",
+    flags: [...HELP_FLAGS, LAYER_FLAG],
+  },
+  {
+    name: "doctor",
+    summary: "Report shadowed and conditionally shadowed shortcuts",
+    flags: HELP_FLAGS,
+  },
+  {
+    name: "find-available",
+    summary: "Find priority-safe unused keys for a modifier combo",
+    flags: [
+      ...HELP_FLAGS,
+      {
+        name: "modifier",
+        type: "string",
+        summary: "Required modifier combo to check",
+        required: true,
+      },
+      {
+        ...LAYER_FLAG,
+        summary: "Required target layer: karabiner|skhd|nvim",
+        required: true,
+      },
+    ],
+  },
+] as const satisfies readonly CommandDescriptor[];
+
+export const PROGRAM = {
+  name: "agentkeys",
+  description:
+    "Inventory keyboard shortcuts across Karabiner, skhd, and Neovim",
+  commands: COMMANDS,
+  flags: TOP_LEVEL_FLAGS,
+} as const;

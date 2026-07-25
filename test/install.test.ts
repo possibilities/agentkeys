@@ -1,24 +1,64 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
-  rmSync,
+  readlinkSync,
+  realpathSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const script = join(import.meta.dir, "..", "scripts", "install.sh");
+const root = realpathSync(join(import.meta.dir, ".."));
+const script = join(root, "scripts", "install.sh");
+const source = join(root, "src", "cli.ts");
+const expectedSha = Bun.spawnSync(["git", "-C", root, "rev-parse", "HEAD"])
+  .stdout.toString()
+  .trim();
+
+setDefaultTimeout(15_000);
+
+type InstallLayout = {
+  root: string;
+  binDir: string;
+  stateDir: string;
+  target: string;
+  receipt: string;
+};
+
+function layout(): InstallLayout {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
+  const binDir = join(temporaryRoot, "bin");
+  const stateDir = join(temporaryRoot, "state");
+  mkdirSync(binDir);
+  mkdirSync(stateDir);
+  return {
+    root: temporaryRoot,
+    binDir,
+    stateDir,
+    target: join(binDir, "agentkeys"),
+    receipt: join(stateDir, "deployed-sha"),
+  };
+}
 
 async function runInstall(
-  binDir: string,
+  installLayout: Pick<InstallLayout, "binDir" | "stateDir">,
   ...args: string[]
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn([script, ...args], {
+  const proc = Bun.spawn(["bash", script, ...args], {
     cwd: "/tmp",
-    env: { ...process.env, AGENTKEYS_INSTALL_BIN_DIR: binDir },
+    env: {
+      ...process.env,
+      AGENTKEYS_INSTALL_BIN_DIR: installLayout.binDir,
+      AGENTKEYS_INSTALL_STATE_DIR: installLayout.stateDir,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -30,62 +70,252 @@ async function runInstall(
   return { exitCode, stdout, stderr };
 }
 
-test("installer refuses to overwrite a foreign file", async () => {
-  const binDir = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
-  writeFileSync(join(binDir, "agentkeys"), "foreign\n");
-  const result = await runInstall(binDir, "--install");
-  expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("Refusing to manage foreign file");
+function git(...args: string[]): string {
+  const result = Bun.spawnSync(["git", ...args]);
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.toString());
+  }
+  return result.stdout.toString().trim();
+}
+
+function previousCheckout(
+  origin = "https://github.com/possibilities/agentkeys.git",
+) {
+  const checkout = mkdtempSync(join(tmpdir(), "agentkeys-previous-"));
+  mkdirSync(join(checkout, "src"));
+  const cli = join(checkout, "src", "cli.ts");
+  writeFileSync(cli, "#!/usr/bin/env bun\n");
+  chmodSync(cli, 0o755);
+  git("-C", checkout, "init", "-q");
+  git("-C", checkout, "config", "user.name", "Agentkeys Test");
+  git("-C", checkout, "config", "user.email", "agentkeys@example.invalid");
+  git("-C", checkout, "remote", "add", "origin", origin);
+  git("-C", checkout, "add", "src/cli.ts");
+  git("-C", checkout, "commit", "-qm", "previous checkout");
+  return { checkout, cli, sha: git("-C", checkout, "rev-parse", "HEAD") };
+}
+
+test("zero arguments installs an exact source link and private receipt", async () => {
+  const installLayout = layout();
+  const result = await runInstall(installLayout);
+
+  expect(result.exitCode).toBe(0);
+  expect(lstatSync(installLayout.target).isSymbolicLink()).toBe(true);
+  expect(readlinkSync(installLayout.target)).toBe(source);
+  expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
+  expect(lstatSync(installLayout.receipt).mode & 0o777).toBe(0o600);
 });
 
-test("installer refuses to remove a foreign symlink", async () => {
-  const binDir = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
-  symlinkSync("/tmp/nope", join(binDir, "agentkeys"));
-  const result = await runInstall(binDir, "--uninstall");
-  expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("Refusing to manage foreign symlink");
+test("--install replaces the receipt inode even at the same SHA", async () => {
+  const installLayout = layout();
+  expect((await runInstall(installLayout, "--install")).exitCode).toBe(0);
+  const firstInode = lstatSync(installLayout.receipt).ino;
+
+  expect((await runInstall(installLayout, "--install")).exitCode).toBe(0);
+  expect(lstatSync(installLayout.receipt).ino).not.toBe(firstInode);
+  expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
 });
 
-test("installer refuses forged ownership markers", async () => {
-  const binDir = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
-  writeFileSync(
-    join(binDir, "agentkeys"),
-    "#!/usr/bin/env bash\n# agentkeys-managed-wrapper\n# agentkeys-source-root: forged\nexec true\n",
+test("installer recovers a current source link with an old valid receipt", async () => {
+  const installLayout = layout();
+  const previous = previousCheckout();
+  symlinkSync(source, installLayout.target);
+  writeFileSync(installLayout.receipt, `${previous.sha}\n`, { mode: 0o600 });
+  const oldReceiptInode = lstatSync(installLayout.receipt).ino;
+
+  const result = await runInstall(installLayout, "--install");
+
+  expect(result.exitCode).toBe(0);
+  expect(readlinkSync(installLayout.target)).toBe(source);
+  expect(lstatSync(installLayout.receipt).ino).not.toBe(oldReceiptInode);
+  expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
+});
+
+test("installer migrates an exact previous-checkout source symlink", async () => {
+  const installLayout = layout();
+  const previous = previousCheckout(
+    "git@github.com:possibilities/agentkeys.git",
   );
-  const result = await runInstall(binDir, "--install");
+  symlinkSync(previous.cli, installLayout.target);
+  writeFileSync(installLayout.receipt, `${previous.sha}\n`, { mode: 0o600 });
+
+  const result = await runInstall(installLayout, "--install");
+  expect(result.exitCode).toBe(0);
+  expect(readlinkSync(installLayout.target)).toBe(source);
+  expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
+});
+
+test("installer refuses a mismatched receipt for a previous-checkout source link", async () => {
+  const installLayout = layout();
+  const previous = previousCheckout();
+  symlinkSync(previous.cli, installLayout.target);
+  writeFileSync(installLayout.receipt, `${expectedSha}\n`, { mode: 0o600 });
+
+  const result = await runInstall(installLayout, "--install");
+
   expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("Refusing to manage foreign file");
+  expect(result.stderr).toContain("does not match the managed command");
+  expect(readlinkSync(installLayout.target)).toBe(previous.cli);
+  expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
 });
 
-test("installer refuses a symlink bin directory", async () => {
-  const root = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
-  const real = join(root, "real");
-  const link = join(root, "link");
-  rmSync(real, { force: true, recursive: true });
-  symlinkSync(root, link);
-  const result = await runInstall(link, "--install");
+test("installer migrates only the exact legacy managed wrapper", async () => {
+  const installLayout = layout();
+  const previous = previousCheckout();
+  writeFileSync(
+    installLayout.target,
+    `#!/usr/bin/env bash\n# agentkeys-managed-wrapper\n# agentkeys-source-root: ${previous.checkout}\nexec bun run ${previous.checkout}/src/cli.ts "$@"\n`,
+    { mode: 0o755 },
+  );
+
+  const result = await runInstall(installLayout, "--install");
+  expect(result.exitCode).toBe(0);
+  expect(lstatSync(installLayout.target).isSymbolicLink()).toBe(true);
+  expect(readlinkSync(installLayout.target)).toBe(source);
+});
+
+test("installer refuses foreign commands and forged legacy markers", async () => {
+  const foreignFile = layout();
+  writeFileSync(foreignFile.target, "foreign\n");
+  const fileResult = await runInstall(foreignFile, "--install");
+  expect(fileResult.exitCode).toBe(1);
+  expect(fileResult.stderr).toContain("Refusing");
+
+  const foreignLink = layout();
+  symlinkSync("/tmp/not-agentkeys", foreignLink.target);
+  const linkResult = await runInstall(foreignLink, "--install");
+  expect(linkResult.exitCode).toBe(1);
+  expect(linkResult.stderr).toContain("Refusing foreign command symlink");
+
+  const forged = layout();
+  writeFileSync(
+    forged.target,
+    "#!/usr/bin/env bash\n# agentkeys-managed-wrapper\n# agentkeys-source-root: /tmp/forged\nexec true\n",
+    { mode: 0o755 },
+  );
+  const forgedResult = await runInstall(forged, "--install");
+  expect(forgedResult.exitCode).toBe(1);
+});
+
+test("installer refuses a previous checkout with a foreign origin", async () => {
+  const installLayout = layout();
+  const previous = previousCheckout(
+    "https://example.com/possibilities/agentkeys.git",
+  );
+  symlinkSync(previous.cli, installLayout.target);
+
+  const result = await runInstall(installLayout, "--install");
   expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("Refusing symlink bin directory");
+  expect(result.stderr).toContain("foreign origin");
 });
 
-test("installer rejects extra arguments", async () => {
-  const binDir = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
-  const result = await runInstall(binDir, "--help", "extra");
-  expect(result.exitCode).toBe(2);
-  expect(result.stderr).toContain("Expected exactly one installer option");
+test("installer refuses symlinked and unsafe writable directories", async () => {
+  const symlinked = layout();
+  const linkedBin = join(symlinked.root, "linked-bin");
+  symlinkSync(symlinked.binDir, linkedBin);
+  const symlinkResult = await runInstall(
+    { ...symlinked, binDir: linkedBin },
+    "--install",
+  );
+  expect(symlinkResult.exitCode).toBe(1);
+  expect(symlinkResult.stderr).toContain("symlinked bin path");
+
+  for (const destination of ["bin", "state"] as const) {
+    const nested = layout();
+    const realParent = join(nested.root, `real-${destination}-parent`);
+    const linkedParent = join(nested.root, `linked-${destination}-parent`);
+    mkdirSync(realParent);
+    symlinkSync(realParent, linkedParent);
+    const result = await runInstall(
+      {
+        binDir:
+          destination === "bin" ? join(linkedParent, "bin") : nested.binDir,
+        stateDir:
+          destination === "state"
+            ? join(linkedParent, "state")
+            : nested.stateDir,
+      },
+      "--install",
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`symlinked ${destination} path component`);
+  }
+
+  const writable = layout();
+  chmodSync(writable.stateDir, 0o777);
+  const writableResult = await runInstall(writable, "--install");
+  expect(writableResult.exitCode).toBe(1);
+  expect(writableResult.stderr).toContain("unsafe writable state directory");
 });
 
-test("installer writes and removes only its managed wrapper", async () => {
-  const binDir = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
-  const install = await runInstall(binDir, "--install");
-  expect(install.exitCode).toBe(0);
-  const target = join(binDir, "agentkeys");
-  expect(existsSync(target)).toBe(true);
-  const wrapper = readFileSync(target, "utf8");
-  expect(wrapper).toContain("agentkeys-managed-wrapper");
-  expect(wrapper).toContain("src/cli.ts");
+test("installer refuses malformed, permissive, symlinked, and hardlinked receipts", async () => {
+  const malformed = layout();
+  writeFileSync(malformed.receipt, "not-a-sha\n", { mode: 0o600 });
+  symlinkSync(source, malformed.target);
+  expect((await runInstall(malformed, "--install")).exitCode).toBe(1);
 
-  const uninstall = await runInstall(binDir, "--uninstall");
-  expect(uninstall.exitCode).toBe(0);
-  expect(existsSync(target)).toBe(false);
+  const permissive = layout();
+  symlinkSync(source, permissive.target);
+  writeFileSync(permissive.receipt, `${expectedSha}\n`, { mode: 0o644 });
+  const permissiveResult = await runInstall(permissive, "--install");
+  expect(permissiveResult.exitCode).toBe(1);
+  expect(permissiveResult.stderr).toContain("unsafe permissions");
+
+  const linked = layout();
+  symlinkSync(source, linked.target);
+  symlinkSync(join(linked.root, "elsewhere"), linked.receipt);
+  const linkedResult = await runInstall(linked, "--install");
+  expect(linkedResult.exitCode).toBe(1);
+  expect(linkedResult.stderr).toContain("unsafe deployed receipt");
+
+  const hardlinked = layout();
+  symlinkSync(source, hardlinked.target);
+  writeFileSync(hardlinked.receipt, `${expectedSha}\n`, { mode: 0o600 });
+  linkSync(hardlinked.receipt, join(hardlinked.root, "receipt-hardlink"));
+  const hardlinkResult = await runInstall(hardlinked, "--install");
+  expect(hardlinkResult.exitCode).toBe(1);
+  expect(hardlinkResult.stderr).toContain("hardlinked deployed receipt");
+});
+
+test("uninstall removes only owned artifacts and is idempotent", async () => {
+  const installLayout = layout();
+  expect((await runInstall(installLayout)).exitCode).toBe(0);
+  const unrelated = join(installLayout.stateDir, "keep-me");
+  writeFileSync(unrelated, "keep\n");
+
+  expect((await runInstall(installLayout, "--uninstall")).exitCode).toBe(0);
+  expect(existsSync(installLayout.target)).toBe(false);
+  expect(existsSync(installLayout.receipt)).toBe(false);
+  expect(readFileSync(unrelated, "utf8")).toBe("keep\n");
+
+  expect((await runInstall(installLayout, "--uninstall")).exitCode).toBe(0);
+  expect(readFileSync(unrelated, "utf8")).toBe("keep\n");
+});
+
+test("uninstall refuses foreign artifacts without deleting owned state", async () => {
+  const installLayout = layout();
+  expect((await runInstall(installLayout)).exitCode).toBe(0);
+  unlinkSync(installLayout.target);
+  writeFileSync(installLayout.target, "foreign\n");
+
+  const result = await runInstall(installLayout, "--uninstall");
+  expect(result.exitCode).toBe(1);
+  expect(existsSync(installLayout.target)).toBe(true);
+  expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
+});
+
+test("help works and unknown or extra arguments are rejected", async () => {
+  const installLayout = layout();
+  const help = await runInstall(installLayout, "--help");
+  expect(help.exitCode).toBe(0);
+  expect(help.stdout).toContain("Usage:");
+
+  const unknown = await runInstall(installLayout, "--wat");
+  expect(unknown.exitCode).toBe(2);
+  expect(unknown.stderr).toContain("Unknown installer option");
+
+  const extra = await runInstall(installLayout, "--install", "extra");
+  expect(extra.exitCode).toBe(2);
+  expect(extra.stderr).toContain("Expected at most one installer option");
+  expect(existsSync(installLayout.target)).toBe(false);
 });

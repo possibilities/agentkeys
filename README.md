@@ -7,11 +7,10 @@ Inventory keyboard shortcuts across Karabiner, skhd, and Neovim.
 Requires Bun 1.3.14.
 
 ```bash
-bun install
-./scripts/install.sh --install
+./scripts/install.sh
 ```
 
-The installer manages only `$HOME/.local/bin/agentkeys` unless `AGENTKEYS_INSTALL_BIN_DIR` is set.
+The installer performs a frozen dependency install, links `$HOME/.local/bin/agentkeys` to this checkout, and records the deployed Git SHA in `$HOME/.local/state/agentkeys/deployed-sha`. Set `AGENTKEYS_INSTALL_BIN_DIR` and `AGENTKEYS_INSTALL_STATE_DIR` to override those locations.
 
 ## Commands
 

@@ -213,10 +213,7 @@ function asFormat(value: unknown): OutputFormat {
   return value as OutputFormat;
 }
 
-async function dispatch(
-  command: CommandDescriptor,
-  flags: ParsedFlags,
-): Promise<number> {
+function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   if (flags.help === true) {
     writeStdout(commandHelp(command));
     return 0;
@@ -270,7 +267,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     const command = commandByName(top.command);
     if (!command) throw new UsageError(`Unknown command: ${top.command}`);
     const flags = parseFlags(top.rest, command);
-    return await dispatch(command, flags);
+    return dispatch(command, flags);
   } catch (error) {
     if (error instanceof AgentkeysError) {
       writeStderr(`${error.message}\n`);

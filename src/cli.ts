@@ -80,7 +80,8 @@ ${COMMANDS.map((command) => `  ${command.name.padEnd(16)} ${command.summary}`).j
 Options:
 ${TOP_LEVEL_FLAGS.map(renderFlag).join("\n")}
 
-Run \`agentkeys <command> --help\` for command flags.
+Run \`agentkeys <command> --help\` for command flags, and
+\`agentkeys --agent-help\` for the agent runbook.
 `;
 }
 

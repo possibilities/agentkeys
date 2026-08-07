@@ -6,7 +6,6 @@ export interface FlagDescriptor {
   summary: string;
   allowed?: readonly string[];
   required?: boolean;
-  hidden?: boolean;
 }
 
 export interface CommandDescriptor {
@@ -32,14 +31,12 @@ export const TOP_LEVEL_FLAGS = [
   {
     name: "agent-help",
     type: "boolean",
-    summary: "Show operator-oriented help",
-    hidden: true,
+    summary: "Show usage and workflow guidance for agents",
   },
   {
     name: "agent-teaser",
     type: "boolean",
     summary: "Show a one-line capability summary",
-    hidden: true,
   },
 ] as const satisfies readonly FlagDescriptor[];
 
@@ -97,6 +94,4 @@ export const PROGRAM = {
   name: "agentkeys",
   description:
     "Inventory keyboard shortcuts across Karabiner, skhd, and Neovim",
-  commands: COMMANDS,
-  flags: TOP_LEVEL_FLAGS,
 } as const;

@@ -104,7 +104,7 @@ test("leaf help-json projects stable public discovery schema", async () => {
   }
 });
 
-test("hidden top-level agent discovery flags work", async () => {
+test("top-level agent discovery flags work", async () => {
   const teaser = await runCli(["--agent-teaser"]);
   expect(teaser.exitCode).toBe(0);
   expect(teaser.stdout).toContain("Inventory keyboard shortcuts");

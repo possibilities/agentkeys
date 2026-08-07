@@ -24,14 +24,33 @@ const AGENT_TEASER =
 
 const AGENT_HELP = `${PROGRAM.description}.
 
-Commands:
-- agentkeys list-bindings --format json
-- agentkeys show-cheatsheet
-- agentkeys doctor
-- agentkeys find-available --modifier cmd+shift --layer skhd
+When to use
+- Before assigning a hotkey: check whether the combo is already taken in any layer.
+- When a shortcut misfires: find which higher-priority layer shadows it.
+- When surveying what is bound: list bindings or render the cheatsheet.
 
-Layer priority: karabiner > skhd > nvim.
-Leader and space-scoped keys are layer-local for cross-layer conflict checks.`;
+How it resolves
+- Reads live config from $HOME/code/dotfiles for Karabiner (karabiner.json),
+  skhd (skhdrc), and Neovim (init.lua plus lua/plugins). Missing files
+  contribute zero bindings; readable but malformed files fail loudly.
+- Layer priority: karabiner > skhd > nvim. A higher layer shadows the same
+  canonical key in a lower one. Leader and space-scoped Neovim keys are
+  layer-local and never conflict across layers.
+
+Workflow
+1. agentkeys doctor
+   Report shadowed and conditionally shadowed shortcuts.
+2. agentkeys find-available --modifier cmd+shift --layer skhd
+   Pick a priority-safe free key before binding anything new.
+3. agentkeys list-bindings --layer skhd --modifier cmd+shift --format table
+   Verify the result. Default format is json; yaml and table are available.
+4. agentkeys show-cheatsheet
+   Markdown overview of every binding, grouped by layer priority.
+
+Contract
+- list-bindings emits stable JSON by default; use it for scripting.
+- Exit codes: 0 success, 2 usage fault, 1 any other failure.
+- agentkeys <command> --help-json prints machine-readable flags per command.`;
 
 type ParsedFlags = Record<string, string | boolean>;
 
@@ -41,10 +60,6 @@ function writeStdout(text: string): void {
 
 function writeStderr(text: string): void {
   process.stderr.write(text);
-}
-
-function visibleFlags(flags: readonly FlagDescriptor[]): FlagDescriptor[] {
-  return flags.filter((flag) => flag.hidden !== true);
 }
 
 function renderFlag(flag: FlagDescriptor): string {
@@ -63,7 +78,7 @@ Commands:
 ${COMMANDS.map((command) => `  ${command.name.padEnd(16)} ${command.summary}`).join("\n")}
 
 Options:
-${visibleFlags(TOP_LEVEL_FLAGS).map(renderFlag).join("\n")}
+${TOP_LEVEL_FLAGS.map(renderFlag).join("\n")}
 
 Run \`agentkeys <command> --help\` for command flags.
 `;
@@ -76,7 +91,7 @@ Usage:
   agentkeys ${command.name} [options]
 
 Options:
-${visibleFlags(command.flags).map(renderFlag).join("\n")}
+${command.flags.map(renderFlag).join("\n")}
 `;
 }
 
@@ -91,7 +106,7 @@ type HelpArgument = {
 
 function helpJson(command: CommandDescriptor): string {
   const implementationFlags = new Set(["help", "help-json"]);
-  const args: HelpArgument[] = visibleFlags(command.flags)
+  const args: HelpArgument[] = command.flags
     .filter((flag) => !implementationFlags.has(flag.name))
     .map((flag) => ({
       name: `--${flag.name}`,

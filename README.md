@@ -1,6 +1,6 @@
 # agentkeys
 
-Inventory keyboard shortcuts across Karabiner, skhd, and Neovim.
+Inventory keyboard shortcuts across Karabiner, skhd, and Neovim; detect cross-layer shadows and find free key slots.
 
 ## Install
 
@@ -10,18 +10,21 @@ Requires Bun 1.3.14.
 ./scripts/install.sh
 ```
 
-The installer performs a frozen dependency install, links `$HOME/.local/bin/agentkeys` to this checkout, and records the deployed Git SHA in `$HOME/.local/state/agentkeys/deployed-sha`. Set `AGENTKEYS_INSTALL_BIN_DIR` and `AGENTKEYS_INSTALL_STATE_DIR` to override those locations.
+Links `$HOME/.local/bin/agentkeys` to this checkout. Set `AGENTKEYS_INSTALL_BIN_DIR` and `AGENTKEYS_INSTALL_STATE_DIR` to override the install locations.
 
-## Commands
+## Use
 
 ```bash
-agentkeys list-bindings --format json
-agentkeys list-bindings --layer skhd --modifier cmd+shift --format table
-agentkeys show-cheatsheet
 agentkeys doctor
-agentkeys find-available --modifier shift+cmd --layer skhd
+agentkeys find-available --modifier cmd+shift --layer skhd
+agentkeys list-bindings --format table
 ```
 
-Default live configuration paths are under `~/code/dotfiles` for Karabiner, skhd, and Neovim. Missing files produce zero bindings. Readable malformed configuration files fail with a clear error.
+`agentkeys --help` lists commands, `agentkeys --agent-help` prints the agent runbook, and `agentkeys <command> --help-json` is machine-readable. Configuration is read from `~/code/dotfiles`.
 
-Use `agentkeys --help`, `agentkeys <command> --help`, or `agentkeys <command> --help-json` for command discovery.
+## Develop
+
+```bash
+bun install
+bun run check
+```

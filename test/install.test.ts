@@ -159,22 +159,7 @@ test("installer refuses a mismatched receipt for a previous-checkout source link
   expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
 });
 
-test("installer migrates only the exact legacy managed wrapper", async () => {
-  const installLayout = layout();
-  const previous = previousCheckout();
-  writeFileSync(
-    installLayout.target,
-    `#!/usr/bin/env bash\n# agentkeys-managed-wrapper\n# agentkeys-source-root: ${previous.checkout}\nexec bun run ${previous.checkout}/src/cli.ts "$@"\n`,
-    { mode: 0o755 },
-  );
-
-  const result = await runInstall(installLayout, "--install");
-  expect(result.exitCode).toBe(0);
-  expect(lstatSync(installLayout.target).isSymbolicLink()).toBe(true);
-  expect(readlinkSync(installLayout.target)).toBe(source);
-});
-
-test("installer refuses foreign commands and forged legacy markers", async () => {
+test("installer refuses foreign command files and symlinks", async () => {
   const foreignFile = layout();
   writeFileSync(foreignFile.target, "foreign\n");
   const fileResult = await runInstall(foreignFile, "--install");

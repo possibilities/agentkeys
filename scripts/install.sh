@@ -9,7 +9,6 @@ STATE_DIR="${AGENTKEYS_INSTALL_STATE_DIR:-$HOME/.local/state/agentkeys}"
 TARGET="$BIN_DIR/agentkeys"
 RECEIPT="$STATE_DIR/deployed-sha"
 EXPECTED_ORIGIN="https://github.com/possibilities/agentkeys.git"
-LEGACY_MARKER="agentkeys-managed-wrapper"
 TMP_PATH=""
 
 cleanup() {
@@ -171,19 +170,8 @@ validate_managed_checkout() {
   MANAGED_SHA="$sha"
 }
 
-write_legacy_wrapper() {
-  local path="$1"
-  local root="$2"
-  {
-    printf '#!/usr/bin/env bash\n'
-    printf '# %s\n' "$LEGACY_MARKER"
-    printf '# agentkeys-source-root: %s\n' "$root"
-    printf 'exec bun run %q "$@"\n' "$root/src/cli.ts"
-  } >"$path"
-}
-
 classify_command() {
-  local destination root first second third
+  local destination root
   MANAGED_KIND="absent"
   MANAGED_ROOT=""
   MANAGED_SHA=""
@@ -203,26 +191,7 @@ classify_command() {
     return 0
   fi
 
-  [[ -f "$TARGET" ]] || die "Refusing foreign command path: $TARGET"
-  validate_safe_file "$TARGET" "command file"
-  [[ "$(file_mode "$TARGET")" == "755" ]] || die "Refusing non-exact legacy command wrapper: $TARGET"
-  {
-    IFS= read -r first || true
-    IFS= read -r second || true
-    IFS= read -r third || true
-  } <"$TARGET"
-  [[ "$first" == '#!/usr/bin/env bash' && "$second" == "# $LEGACY_MARKER" && "$third" == '# agentkeys-source-root: '* ]] || \
-    die "Refusing foreign command file: $TARGET"
-  root="${third#\# agentkeys-source-root: }"
-  [[ -n "$root" ]] || die "Refusing non-exact legacy command wrapper: $TARGET"
-  validate_managed_checkout "$root"
-
-  TMP_PATH="$(mktemp "$BIN_DIR/.agentkeys-legacy.XXXXXX")"
-  write_legacy_wrapper "$TMP_PATH" "$root"
-  cmp -s "$TARGET" "$TMP_PATH" || die "Refusing non-exact legacy command wrapper: $TARGET"
-  rm -f -- "$TMP_PATH"
-  TMP_PATH=""
-  MANAGED_KIND="legacy-wrapper"
+  die "Refusing foreign command path: $TARGET"
 }
 
 validate_receipt() {

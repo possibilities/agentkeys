@@ -1,6 +1,6 @@
 # agentkeys — repository guidance
 
-Reads five keyboard config formats, normalizes every binding to one canonical
+Reads seven keyboard config formats, normalizes every binding to one canonical
 key string, and reports which layer wins each key. Read `README.md` for usage,
 `CONTEXT.md` for the glossary — use its canonical terms in code, comments, and
 commit messages.
@@ -17,7 +17,8 @@ actually contain.
 
 `src/` is flat, one module per concern:
 
-- `model.ts` owns `LAYERS`, and its order *is* the priority chain. Everything
+- `model.ts` owns `LAYERS` and the hosting paths; `intercepts()` is the only
+  priority test, because sibling layers never shadow each other. Everything
   downstream derives from it, including the descriptor's `--layer` choices.
 - `parsers.ts` is one function per format plus discovery. `collectAll` returns
   bindings *and* a source manifest; nothing may report an empty inventory
@@ -26,6 +27,9 @@ actually contain.
   parser converts into the canonical key here and nowhere else.
 - `reserved.ts` is authored data, not parsed: shortcuts owned by software with
   no readable config. Advisory only — a Reservation is never a Shadow.
+- `vendored.ts` is authored data too, but real Bindings: defaults transcribed
+  from apps with no dump command (Orca, herdr), version-stamped, verified
+  against a source checkout on refresh.
 - `descriptor.ts` is the single source for commands and flags; help, help-json,
   and validation all fall out of it.
 
@@ -34,7 +38,8 @@ actually contain.
 The decisions that shaped the design live in `docs/adr/`, one per file:
 interception order as the priority chain, the Ghostty binary over its config
 file, documented `~/.config` discovery, layer-scoped keys excluded from
-conflicts, and passthrough bindings shadowing nothing. Read them before
+conflicts, passthrough bindings shadowing nothing, interception following
+hosting paths, and vendored defaults for apps without a dump. Read them before
 changing a parser or the conflict logic; append a new numbered record rather
 than editing an old one.
 

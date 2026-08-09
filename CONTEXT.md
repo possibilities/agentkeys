@@ -1,7 +1,10 @@
 # Glossary
 
 - **Binding** — One normalized keyboard shortcut with its layer, key, action, optional mode, optional context, and optional source location. Avoid: hotkey record.
-- **Layer** — A source and interception level for bindings. Priority order is the order a keystroke reaches them: Karabiner, skhd, Ghostty, tmux, Neovim. Avoid: source when priority is relevant.
+- **Layer** — A source and interception level for bindings. Priority is the order a keystroke reaches them along its Hosting path: Karabiner, skhd, then the focused app (Ghostty or Orca), then what it hosts (tmux or herdr inside Ghostty), then Neovim inside any of them. Avoid: source when priority is relevant.
+- **Hosting path** — The chain of layers that hand a keystroke downward on this machine: Karabiner → skhd → Ghostty → tmux/herdr → Neovim, or Karabiner → skhd → Orca → Neovim. A Shadow exists only between layers on one path. Avoid: chain when siblings are involved.
+- **Sibling layers** — Layers on no shared Hosting path: Ghostty and Orca, tmux and herdr. Only the focused one ever holds the keystroke, so identical keys across siblings are two apps' own shortcuts, never a Shadow. Avoid: conflict.
+- **Vendored default** — A Binding transcribed by hand from an app's source because the app has no dump command (Orca, herdr), version-stamped, and joined to the inventory only when the app is present. Avoid: parsed binding.
 - **Shadow** — A higher-priority layer uses the same non-scoped key as a lower-priority layer, so the lower binding may not receive it. Avoid: conflict when interception is known.
 - **Conditional shadow** — A Shadow whose higher-priority Binding intercepts only in named contexts, such as particular apps or devices. Avoid: Shadow when the condition matters.
 - **Layer-scoped key** — A key only that layer's own users can reach: behind a prefix (`prefix+`, `space+`, `leader+`), inside one of its modes, or later in one of its chord sequences. Layer-scoped keys are excluded from cross-layer conflict detection. Avoid: global shortcut.

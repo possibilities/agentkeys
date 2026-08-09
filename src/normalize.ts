@@ -39,6 +39,10 @@ const PUNCTUATION_NAMES: Record<string, string> = {
   bslash: "\\",
   grave_accent_and_tilde: "`",
   grave_accent: "`",
+  backquote: "`",
+  bracketleft: "[",
+  bracketright: "]",
+  underscore: "_",
   bar: "|",
   lt: "<",
 };
@@ -324,6 +328,82 @@ export function normalizeGhosttyKey(trigger: string): string | undefined {
   }
   const mods = parts.map((part) => GHOSTTY_MODS[part.toLowerCase()] ?? part);
   return buildKey(mods, GHOSTTY_KEYS[base.toLowerCase()] ?? normalizeBaseKey(base));
+}
+
+const ORCA_MODS: Record<string, string> = {
+  // Mod is Cmd on darwin, the only platform whose column agentkeys vendors.
+  mod: "cmd",
+  cmdorctrl: "cmd",
+  commandorcontrol: "cmd",
+  cmd: "cmd",
+  command: "cmd",
+  meta: "cmd",
+  ctrl: "ctrl",
+  control: "ctrl",
+  alt: "alt",
+  option: "alt",
+  opt: "alt",
+  shift: "shift",
+};
+
+const ORCA_KEYS: Record<string, string> = {
+  arrowup: "up",
+  arrowdown: "down",
+  arrowleft: "left",
+  arrowright: "right",
+  enter: "return",
+  // Orca folds the plus spelling onto the physical `=` key, same as Ghostty.
+  plus: "=",
+  pageup: "pageup",
+  pagedown: "pagedown",
+  numpadadd: "numpadadd",
+  numpadsubtract: "numpadsubtract",
+};
+
+// Orca chords arrive in the registry's canonical spelling from the vendored
+// defaults and in any user spelling from keybindings.json; both use the same
+// token vocabulary. Returns undefined for an empty chord.
+export function normalizeOrcaKey(chord: string): string | undefined {
+  const parts = chord
+    .split("+")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  if (parts.length === 0) return undefined;
+
+  // A double-tap is a gesture on a lone modifier. No other layer can spell
+  // it, so it keeps its own name and collides with nothing.
+  if (parts.some((part) => part.toLowerCase() === "doubletap")) {
+    return parts.map((part) => part.toLowerCase()).join("+");
+  }
+
+  const base = parts.pop() ?? "";
+  const mods = parts.map((part) => ORCA_MODS[part.toLowerCase()] ?? part.toLowerCase());
+  return buildKey(mods, ORCA_KEYS[base.toLowerCase()] ?? normalizeBaseKey(base));
+}
+
+const HERDR_KEYS: Record<string, string> = {
+  esc: "escape",
+  enter: "return",
+};
+
+// herdr labels are lowercase chords ("ctrl+b", "prefix+shift+n", "f12"). A
+// leading `prefix+` survives normalization verbatim: it is the layer-scope
+// marker the model already understands.
+export function normalizeHerdrKey(label: string): string | undefined {
+  const trimmed = label.trim().toLowerCase();
+  if (trimmed === "") return undefined;
+  const scoped = trimmed.startsWith("prefix+");
+  const body = scoped ? trimmed.slice("prefix+".length) : trimmed;
+  const parts = body
+    .split("+")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  // `prefix+` ended the label: the plus key itself, as in tmux's trailing +.
+  if (parts.length === 0) parts.push("+");
+  const base = parts.pop() ?? "";
+  const mods = parts.map((part) => USER_MODS[part] ?? part);
+  const key = buildKey(mods, HERDR_KEYS[base] ?? normalizeBaseKey(base));
+  return scoped ? `prefix+${key}` : key;
 }
 
 export function normalizeNvimKey(lhs: string): string {

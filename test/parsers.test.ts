@@ -6,8 +6,10 @@ import {
   collectAll,
   defaultPaths,
   parseGhostty,
+  parseHerdr,
   parseKarabiner,
   parseNvim,
+  parseOrca,
   parseSkhd,
   parseTmux,
   tmuxFiles,
@@ -295,6 +297,137 @@ test("Ghostty parser reads triggers, passthrough actions, and unbind", () => {
   ]);
 });
 
+test("Orca parser emits vendored darwin defaults with scope classification", () => {
+  const root = tempRoot();
+  const bindings = parseOrca(join(root, "missing-keybindings.json"));
+
+  const byAction = new Map(bindings.map((binding) => [binding.action, binding]));
+  // Mod folds to cmd on darwin; global/tabs/terminal scopes compete.
+  expect(byAction.get("tab.newTerminal")?.key).toBe("cmd+t");
+  expect(byAction.get("tab.newTerminal")?.isLayerScoped).toBe(false);
+  expect(byAction.get("tab.nextAllTypes")?.key).toBe("cmd+shift+]");
+  expect(byAction.get("terminal.splitRight")?.key).toBe("cmd+d");
+  // Editor/browser scopes never fire while a terminal pane has focus.
+  expect(byAction.get("editor.save")?.key).toBe("cmd+s");
+  expect(byAction.get("editor.save")?.isLayerScoped).toBe(true);
+  expect(byAction.get("editor.save")?.mode).toBe("editor");
+  expect(byAction.get("browser.reload")?.isLayerScoped).toBe(true);
+  // A digit-range representative claims the whole 1-9 row.
+  const workspaceDigits = bindings.filter((b) => b.action === "workspace.selectByIndex");
+  expect(workspaceDigits.map((b) => b.key)).toEqual(
+    Array.from({ length: 9 }, (_, i) => `cmd+${i + 1}`),
+  );
+  expect(bindings.every((binding) => binding.sourceFile.includes("vendored"))).toBe(true);
+});
+
+test("Orca parser overlays keybindings.json: rebind, unbind, mask, unknown ids", () => {
+  const root = tempRoot();
+  const path = writeFixture(
+    root,
+    "keybindings.json",
+    JSON.stringify({
+      version: 1,
+      keybindings: {
+        "tab.newTerminal": "Mod+Shift+K",
+        "voice.dictation": null,
+        "plugin:acme.tools/run": ["Mod+Alt+G"],
+      },
+      platforms: {
+        darwin: { "tab.newTerminal": ["Mod+Alt+K"] },
+        linux: { "tab.newTerminal": "Ctrl+Alt+Z" },
+      },
+    }),
+  );
+  const bindings = parseOrca(path);
+
+  // The darwin section masks the common one, mirroring Orca's own merge.
+  const newTerminal = bindings.filter((binding) => binding.action === "tab.newTerminal");
+  expect(newTerminal.map((binding) => binding.key)).toEqual(["alt+cmd+k"]);
+  expect(newTerminal[0]?.sourceFile).toBe(path);
+  // null unbinds the action and its vendored default with it.
+  expect(bindings.some((binding) => binding.action === "voice.dictation")).toBe(false);
+  // An id the vendored registry does not know competes rather than hides.
+  const plugin = bindings.find((binding) => binding.action === "plugin:acme.tools/run");
+  expect(plugin?.key).toBe("alt+cmd+g");
+  expect(plugin?.isLayerScoped).toBe(false);
+
+  const malformed = writeFixture(root, "broken.json", "{ not json");
+  expect(() => parseOrca(malformed)).toThrow("Malformed Orca keybindings JSON");
+});
+
+test("herdr parser emits vendored defaults: prefix, prefix-mode keys, ranges, modes", () => {
+  const root = tempRoot();
+  const bindings = parseHerdr(join(root, "missing-config.toml"));
+
+  const byAction = new Map(bindings.map((binding) => [binding.action, binding]));
+  // The prefix is a real global binding, exactly like tmux's.
+  expect(byAction.get("herdr prefix key")?.key).toBe("ctrl+b");
+  expect(byAction.get("herdr prefix key")?.isLayerScoped).toBe(false);
+  // prefix+ bindings keep the scope marker the model already understands.
+  expect(byAction.get("new_tab")?.key).toBe("prefix+c");
+  expect(byAction.get("new_tab")?.isLayerScoped).toBe(true);
+  expect(byAction.get("split_horizontal")?.key).toBe("prefix+-");
+  expect(byAction.get("copy_mode")?.key).toBe("prefix+[");
+  // Mode-scoped keys are unreachable outside their herdr mode.
+  expect(byAction.get("navigate_pane_left")?.key).toBe("h");
+  expect(byAction.get("navigate_pane_left")?.mode).toBe("navigate");
+  expect(byAction.get("navigate_pane_left")?.isLayerScoped).toBe(true);
+  expect(byAction.get("remote_image_paste")?.context).toBe("remote client only");
+  // 1..9 ranges expand to nine bindings.
+  const switchTab = bindings.filter((binding) => binding.action === "switch_tab");
+  expect(switchTab.map((binding) => binding.key)).toEqual(
+    Array.from({ length: 9 }, (_, i) => `prefix+${i + 1}`),
+  );
+});
+
+test("herdr parser overlays config.toml: prefix, direct chords, unbinds, commands, indexed", () => {
+  const root = tempRoot();
+  const path = writeFixture(
+    root,
+    "config.toml",
+    [
+      "[keys]",
+      'prefix = "f12"',
+      'next_tab = ["prefix+n", "ctrl+alt+]"]',
+      'zoom = ""',
+      'previous_workspace = "prefix+shift+l"',
+      "",
+      "[keys.indexed]",
+      'tabs = "alt"',
+      "",
+      "[[keys.command]]",
+      'key = "ctrl+alt+g"',
+      'command = "lazygit"',
+      'description = "open lazygit"',
+    ].join("\n"),
+  );
+  const bindings = parseHerdr(path);
+
+  const byKey = new Map(bindings.map((binding) => [binding.key, binding]));
+  expect(byKey.get("f12")?.action).toBe("herdr prefix key");
+  expect(bindings.some((binding) => binding.key === "ctrl+b")).toBe(false);
+  // A direct chord competes cross-layer; its prefix-mode twin stays scoped.
+  const nextTab = bindings.filter((binding) => binding.action === "next_tab");
+  expect(nextTab.map((binding) => [binding.key, binding.isLayerScoped])).toEqual([
+    ["prefix+n", true],
+    ["ctrl+alt+]", false],
+  ]);
+  // An empty string unbinds the vendored default.
+  expect(bindings.some((binding) => binding.action === "zoom")).toBe(false);
+  // Unset-by-default actions bind when the user sets them.
+  expect(bindings.some((binding) => binding.key === "prefix+shift+l")).toBe(true);
+  // [keys.indexed] combos claim the whole direct 1-9 row.
+  const indexed = bindings.filter((binding) => binding.action === "indexed tabs 1-9");
+  expect(indexed.map((binding) => binding.key)).toEqual(
+    Array.from({ length: 9 }, (_, i) => `alt+${i + 1}`),
+  );
+  expect(indexed[0]?.isLayerScoped).toBe(false);
+  expect(byKey.get("ctrl+alt+g")?.action).toBe("open lazygit");
+
+  const malformed = writeFixture(root, "broken.toml", "[keys\nprefix=");
+  expect(() => parseHerdr(malformed)).toThrow("Malformed herdr TOML");
+});
+
 test("collectAll accepts injected paths, reports sources, and treats missing files as empty", () => {
   const root = tempRoot();
   const skhd = writeFixture(root, "skhdrc", "cmd - a : echo a\n");
@@ -304,6 +437,10 @@ test("collectAll accepts injected paths, reports sources, and treats missing fil
     skhd,
     ghosttyBin: "",
     ghosttyConfig: join(root, "missing-ghostty"),
+    orcaBin: "",
+    orcaKeybindings: join(root, "missing-orca.json"),
+    herdrBin: "",
+    herdrConfig: join(root, "missing-herdr.toml"),
     tmuxConf: join(root, "missing.conf"),
     tmuxConfD: join(root, "missing-conf.d"),
     nvimInit: join(root, "missing.lua"),
@@ -315,7 +452,12 @@ test("collectAll accepts injected paths, reports sources, and treats missing fil
     ["karabiner", false],
     ["skhd", true],
     ["ghostty", false],
+    ["orca", false],
     ["tmux", false],
+    ["herdr", false],
     ["nvim", false],
   ]);
+  expect(inventory.sources.find((source) => source.layer === "orca")?.source).toContain(
+    "not installed",
+  );
 });

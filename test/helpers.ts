@@ -77,11 +77,20 @@ export async function runCli(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["bun", fixturePath(import.meta.dir, "../src/cli.ts"), ...args], {
     cwd: "/tmp",
-    // An empty binary path keeps the Ghostty probe from reaching the real
-    // installed app, so a fixture HOME describes the whole inventory. It
-    // must land after the process env, or a real AGENTKEYS_GHOSTTY_BIN in
-    // the parent environment would silently re-enable the probe.
-    env: { ...process.env, AGENTKEYS_GHOSTTY_BIN: "", ...env },
+    // Empty binary paths keep the Ghostty probe and the orca/herdr presence
+    // checks from reaching the real installed apps, and an empty
+    // XDG_CONFIG_HOME keeps herdr discovery inside the fixture HOME, so a
+    // fixture HOME describes the whole inventory. They must land after the
+    // process env, or real values in the parent environment would silently
+    // re-enable the probes.
+    env: {
+      ...process.env,
+      AGENTKEYS_GHOSTTY_BIN: "",
+      AGENTKEYS_ORCA_BIN: "",
+      AGENTKEYS_HERDR_BIN: "",
+      XDG_CONFIG_HOME: "",
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });

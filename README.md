@@ -59,3 +59,6 @@ bun install
 bun run check          # lint + typecheck + test
 bash scripts/smoke.sh  # every command end to end, throwaway HOME
 ```
+
+`CONTEXT.md` holds the domain glossary; `docs/adr/` the decisions that shaped
+the design.

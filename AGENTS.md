@@ -31,19 +31,12 @@ actually contain.
 
 ## Load-bearing decisions
 
-- **Layer priority is interception order**, not preference: Karabiner's virtual
-  HID driver, then the skhd daemon, then the terminal app, then tmux inside it,
-  then the editor inside that.
-- **Ghostty prefers the binary over the config file.** `ghostty +list-keybinds`
-  reports defaults the file omits, and those defaults are what actually shadow
-  tmux and Neovim. The file is the fallback, and `doctor` says which was used.
-- **Discovery uses each tool's documented `~/.config` location.** An earlier
-  version hardcoded a dotfiles checkout path and silently returned nothing on
-  every machine but one. Never reintroduce a private path as a default.
-- **Layer-scoped keys are excluded from conflicts**, and each parser decides:
-  tmux prefix and mode tables, Neovim leader keys, Ghostty chord sequences.
-- **Passthrough bindings shadow nothing.** skhd `* ~` and Ghostty `text:`/`esc:`
-  forward the keystroke; treating them as interceptions invents conflicts.
+The decisions that shaped the design live in `docs/adr/`, one per file:
+interception order as the priority chain, the Ghostty binary over its config
+file, documented `~/.config` discovery, layer-scoped keys excluded from
+conflicts, and passthrough bindings shadowing nothing. Read them before
+changing a parser or the conflict logic; append a new numbered record rather
+than editing an old one.
 
 ## The skill
 

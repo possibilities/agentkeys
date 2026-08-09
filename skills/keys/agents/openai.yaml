@@ -1,0 +1,6 @@
+interface:
+  display_name: "Keys"
+  short_description: "Choose and audit keyboard shortcuts with agentkeys"
+  default_prompt: "Use $keys to pick or audit a keyboard shortcut across every layer."
+policy:
+  allow_implicit_invocation: true

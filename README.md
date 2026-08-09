@@ -21,7 +21,20 @@ agentkeys find-available --modifier cmd+shift --layer skhd
 agentkeys list-bindings --format table
 ```
 
-`agentkeys --help` lists commands, `agentkeys --agent-help` prints the agent runbook, and `agentkeys <command> --help-json` is machine-readable. The `keys` skill in `skills/` teaches an agent to drive all of it.
+## For agents
+
+```bash
+agentkeys --agent-teaser              # one line
+agentkeys --agent-help                # the runbook
+agentkeys list-bindings --help-json   # machine-readable flags, per command
+```
+
+Machine formats emit the stable `{schema_version, ok, error, data}` envelope
+on stdout: `list-bindings` in json (the default) or yaml, and `explain
+--format json`. Exit 0 on success, exit 1 with `ok:false` and a snake_case
+`error.code` on a domain failure, exit 2 for a usage fault — which is never an
+envelope, so stdout is parseable whenever a command actually ran. The `keys`
+skill in `skills/` teaches an agent to drive all of it.
 
 ## Where configuration comes from
 
@@ -43,5 +56,6 @@ Ghostty prefers the binary because the config file holds only what you overrode 
 
 ```bash
 bun install
-bun run check
+bun run check          # lint + typecheck + test
+bash scripts/smoke.sh  # every command end to end, throwaway HOME
 ```

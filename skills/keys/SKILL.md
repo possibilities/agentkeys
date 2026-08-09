@@ -185,10 +185,13 @@ from a misconfigured one:
 | ghostty | /Applications/Ghostty.app/Contents/MacOS/ghostty +list-keybinds | 95 |
 ```
 
-Contract: `list-bindings` emits stable JSON by default and `explain --format
-json` does the same for one key — use those for scripting. Exit 0 success, 2
-usage fault, 1 anything else. A malformed but readable config fails loudly with
-`file:line`; a missing config contributes nothing.
+Contract: machine formats emit one stable `{schema_version, ok, error, data}`
+envelope on stdout — `list-bindings` in its default json (or yaml), and
+`explain --format json` for one key — use those for scripting. A domain
+failure there is the same envelope with `ok:false` and a snake_case
+`error.code`. Exit 0 success, 2 usage fault (never an envelope), 1 anything
+else. A malformed but readable config fails loudly with `file:line`; a missing
+config contributes nothing.
 
 ## Where configuration is read from
 

@@ -66,3 +66,6 @@ re-verifying the skill's claims against the live CLI before editing its prose.
   Pick per format and be consistent within it.
 - Exit codes: 0 success, 2 usage fault, 1 anything else. Errors never print a
   stack trace.
+- Machine formats (list-bindings json/yaml, explain json) emit one
+  `{schema_version, ok, error, data}` envelope per outcome, success or
+  failure; usage faults exit before the command runs and are never envelopes.

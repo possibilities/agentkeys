@@ -9,3 +9,4 @@
 - **Passthrough** — A Binding that forwards the keystroke onward instead of consuming it — skhd's `* ~`, Ghostty's `text:` and `esc:` actions — so it shadows nothing below it. Avoid: no-op.
 - **Canonical key** — A lowercase key string with modifiers ordered as `ctrl`, `alt`, `cmd`, `shift`, followed by the base key. Avoid: raw key notation.
 - **Reservation** — A well-known shortcut owned by software that keeps no config agentkeys can read: macOS, browsers, readline. Reported as advice against binding over it, never as a Shadow. Avoid: conflict.
+- **Envelope** — The `{schema_version, ok, error, data}` wrapper every machine-format outcome is emitted in, success or failure, shared across the agent* family. Usage faults exit before a command runs and are not Envelopes. Avoid: payload.

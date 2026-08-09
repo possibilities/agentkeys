@@ -198,12 +198,18 @@ test("availability names free slots that well-known software already uses", () =
 
 test("renders json, yaml, table, and empty binding output", () => {
   const bindings = [new Binding({ layer: "skhd", key: "cmd+a", action: "act" })];
-  expect(renderBindings(bindings, "json")).toContain('"layer": "skhd"');
+  const enveloped = JSON.parse(renderBindings(bindings, "json"));
+  expect(enveloped).toMatchObject({
+    schema_version: 1,
+    ok: true,
+    error: null,
+    data: [{ layer: "skhd", key: "cmd+a", action: "act" }],
+  });
   expect(renderBindings(bindings, "yaml")).toContain("layer: skhd");
   expect(renderBindings(bindings, "table")).toBe(
     "LAYER  KEY    ACTION  CONTEXT\n-----  -----  ------  -------\nskhd   cmd+a  act\n",
   );
-  expect(renderBindings([], "json")).toBe("[]\n");
-  expect(renderBindings([], "yaml")).toBe("[]\n");
+  expect(JSON.parse(renderBindings([], "json")).data).toEqual([]);
+  expect(renderBindings([], "yaml")).toBe("schema_version: 1\nok: true\nerror: null\ndata: []\n");
   expect(renderBindings([], "table")).toBe("No bindings found.\n");
 });

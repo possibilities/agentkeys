@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { stringify } from "yaml";
 import {
   COMMANDS,
   type CommandDescriptor,
@@ -6,6 +7,7 @@ import {
   PROGRAM,
   TOP_LEVEL_FLAGS,
 } from "./descriptor.ts";
+import { failure, success } from "./envelope.ts";
 import { AgentkeysError, UsageError } from "./errors.ts";
 import { isLayer, type Layer } from "./model.ts";
 import { collectAll } from "./parsers.ts";
@@ -64,9 +66,12 @@ Workflow
    Markdown overview of every binding, grouped by layer priority.
 
 Contract
-- list-bindings emits stable JSON by default; use it for scripting, and
-  explain --format json for a single key.
-- Exit codes: 0 success, 2 usage fault, 1 any other failure.
+- Machine formats emit one stable {schema_version, ok, error, data} envelope
+  on stdout: list-bindings --format json (the default) or yaml, and
+  explain --format json for a single key. A domain failure there is the same
+  envelope with ok:false and a snake_case error.code.
+- Exit codes: 0 success, 2 usage fault, 1 any other failure. A usage fault
+  exits before the command runs and is never an envelope.
 - agentkeys <command> --help-json prints machine-readable flags per command.`;
 
 type ParsedFlags = Record<string, string | boolean>;
@@ -272,7 +277,7 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
     const explanation = explainKey(collectAll().bindings, flags.key);
     writeStdout(
       flags.format === "json"
-        ? `${JSON.stringify(explanation, null, 2)}\n`
+        ? `${JSON.stringify(success(explanation), null, 2)}\n`
         : renderExplain(explanation),
     );
     return 0;
@@ -281,17 +286,44 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   throw new UsageError(`Unknown command: ${command.name}`);
 }
 
+// The formats whose outcomes are envelopes. Resolved before dispatch so a
+// domain failure mid-command can still honor the machine contract.
+function machineFormat(
+  command: CommandDescriptor,
+  flags: ParsedFlags,
+): "json" | "yaml" | undefined {
+  if (command.name === "list-bindings") {
+    const format = asFormat(flags.format);
+    return format === "table" ? undefined : format;
+  }
+  if (command.name === "explain" && flags.format === "json") return "json";
+  return undefined;
+}
+
 export function main(argv = process.argv.slice(2)): number {
+  let format: "json" | "yaml" | undefined;
   try {
     const top = parseTop(argv);
     if (top.command === undefined) return 0;
     const command = commandByName(top.command);
     if (!command) throw new UsageError(`Unknown command: ${top.command}`);
     const flags = parseFlags(top.rest, command);
+    format = machineFormat(command, flags);
     return dispatch(command, flags);
   } catch (error) {
-    if (error instanceof AgentkeysError) {
+    if (error instanceof UsageError) {
       writeStderr(`${error.message}\n`);
+      return error.exitCode;
+    }
+    if (error instanceof AgentkeysError) {
+      if (format === undefined) {
+        writeStderr(`${error.message}\n`);
+      } else {
+        const envelope = failure(error);
+        writeStdout(
+          format === "json" ? `${JSON.stringify(envelope, null, 2)}\n` : stringify(envelope),
+        );
+      }
       return error.exitCode;
     }
     const message = error instanceof Error ? error.message : String(error);

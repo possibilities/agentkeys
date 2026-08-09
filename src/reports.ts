@@ -1,4 +1,5 @@
 import { stringify } from "yaml";
+import { success } from "./envelope.ts";
 import { type Binding, bindingsToRecords, LAYERS, type Layer, priorityIndex } from "./model.ts";
 import { buildKey, normalizeModifierCombo } from "./normalize.ts";
 import type { LayerSource } from "./parsers.ts";
@@ -77,8 +78,9 @@ function tableEscape(value: string): string {
 }
 
 export function renderBindings(bindings: readonly Binding[], format: OutputFormat): string {
-  if (format === "json") return `${JSON.stringify(bindingsToRecords(bindings), null, 2)}\n`;
-  if (format === "yaml") return stringify(bindingsToRecords(bindings));
+  if (format === "json")
+    return `${JSON.stringify(success(bindingsToRecords(bindings)), null, 2)}\n`;
+  if (format === "yaml") return stringify(success(bindingsToRecords(bindings)));
   if (bindings.length === 0) return "No bindings found.\n";
 
   const header = ["LAYER", "KEY", "ACTION", "CONTEXT"];

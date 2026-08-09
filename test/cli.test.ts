@@ -145,13 +145,16 @@ test("CLI lists, filters, and renders default JSON", async () => {
     HOME: home,
   });
   expect(result.exitCode).toBe(0);
-  const rows = JSON.parse(result.stdout) as Array<{
-    layer: string;
-    key: string;
-    action: string;
-    source: string;
-  }>;
-  expect(rows).toEqual([
+  const envelope = JSON.parse(result.stdout) as {
+    schema_version: number;
+    ok: boolean;
+    error: null;
+    data: Array<{ layer: string; key: string; action: string; source: string }>;
+  };
+  expect(envelope.schema_version).toBe(1);
+  expect(envelope.ok).toBe(true);
+  expect(envelope.error).toBeNull();
+  expect(envelope.data).toEqual([
     {
       layer: "skhd",
       key: "cmd+shift+h",
@@ -199,26 +202,33 @@ test("CLI cheatsheet, doctor, table, and availability reports", async () => {
   });
   expect(explainJson.exitCode).toBe(0);
   expect(JSON.parse(explainJson.stdout)).toMatchObject({
-    key: "cmd+shift+4",
-    owners: [],
-    verdict: "free in your config, but macOS uses it",
+    schema_version: 1,
+    ok: true,
+    error: null,
+    data: {
+      key: "cmd+shift+4",
+      owners: [],
+      verdict: "free in your config, but macOS uses it",
+    },
   });
 });
 
 test("CLI no-match output stays machine-readable for machine formats", async () => {
   const home = tempHome();
 
+  const emptyEnvelope = { schema_version: 1, ok: true, error: null, data: [] };
+
   const json = await runCli(["list-bindings", "--format", "json"], {
     HOME: home,
   });
   expect(json.exitCode).toBe(0);
-  expect(json.stdout).toBe("[]\n");
+  expect(JSON.parse(json.stdout)).toEqual(emptyEnvelope);
 
   const yaml = await runCli(["list-bindings", "--format", "yaml"], {
     HOME: home,
   });
   expect(yaml.exitCode).toBe(0);
-  expect(yaml.stdout).toBe("[]\n");
+  expect(yaml.stdout).toBe("schema_version: 1\nok: true\nerror: null\ndata: []\n");
 
   const table = await runCli(["list-bindings", "--format", "table"], {
     HOME: home,
@@ -240,8 +250,24 @@ test("CLI rejects bad arguments with nonzero status", async () => {
 test("CLI reports malformed readable config without a stack trace", async () => {
   const home = tempHome();
   writeFixture(home, ".config/karabiner/karabiner.json", "{");
-  const result = await runCli(["list-bindings"], { HOME: home });
-  expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("Malformed Karabiner JSON");
-  expect(result.stderr).not.toContain("\n    at ");
+
+  // A machine format honors the envelope contract even on failure.
+  const machine = await runCli(["list-bindings"], { HOME: home });
+  expect(machine.exitCode).toBe(1);
+  expect(JSON.parse(machine.stdout)).toMatchObject({
+    schema_version: 1,
+    ok: false,
+    error: {
+      code: "malformed_config",
+      message: expect.stringContaining("Malformed Karabiner JSON"),
+    },
+    data: null,
+  });
+  expect(machine.stdout).not.toContain("\n    at ");
+
+  // A human format keeps the failure on stderr.
+  const human = await runCli(["doctor"], { HOME: home });
+  expect(human.exitCode).toBe(1);
+  expect(human.stderr).toContain("Malformed Karabiner JSON");
+  expect(human.stderr).not.toContain("\n    at ");
 });

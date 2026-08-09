@@ -18,7 +18,7 @@ function readExistingText(path: string): string | undefined {
     return readFileSync(path, "utf8");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new AgentkeysError(`Cannot read ${path}: ${message}`);
+    throw new AgentkeysError(`Cannot read ${path}: ${message}`, "unreadable_config");
   }
 }
 
@@ -103,7 +103,7 @@ export function parseKarabiner(path: string): Binding[] {
     data = JSON.parse(text);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new AgentkeysError(`Malformed Karabiner JSON at ${path}: ${message}`);
+    throw new AgentkeysError(`Malformed Karabiner JSON at ${path}: ${message}`, "malformed_config");
   }
 
   const profiles = Array.isArray(objectValue(data).profiles)
@@ -237,11 +237,18 @@ export function parseSkhd(path: string): Binding[] {
             }),
           );
         } else if (blockStripped !== "" && !blockStripped.startsWith("#")) {
-          throw new AgentkeysError(`Malformed skhd block at ${path}:${blockLine.lineNumber}`);
+          throw new AgentkeysError(
+            `Malformed skhd block at ${path}:${blockLine.lineNumber}`,
+            "malformed_config",
+          );
         }
         index += 1;
       }
-      if (!closed) throw new AgentkeysError(`Unclosed skhd block at ${path}:${lineNumber}`);
+      if (!closed)
+        throw new AgentkeysError(
+          `Unclosed skhd block at ${path}:${lineNumber}`,
+          "malformed_config",
+        );
       continue;
     }
 
@@ -263,7 +270,10 @@ export function parseSkhd(path: string): Binding[] {
         }),
       );
     } else if (stripped.includes(":") || stripped.includes("-")) {
-      throw new AgentkeysError(`Malformed skhd binding at ${path}:${lineNumber}`);
+      throw new AgentkeysError(
+        `Malformed skhd binding at ${path}:${lineNumber}`,
+        "malformed_config",
+      );
     }
     index += 1;
   }
@@ -355,7 +365,10 @@ export function parseNvim(paths: readonly string[]): Binding[] {
     for (const statement of keymapStatements(lines)) {
       const match = statement.text.match(NVIM_KEYMAP);
       if (!match) {
-        throw new AgentkeysError(`Malformed Neovim keymap at ${path}:${statement.lineNumber}`);
+        throw new AgentkeysError(
+          `Malformed Neovim keymap at ${path}:${statement.lineNumber}`,
+          "malformed_config",
+        );
       }
       const mode = match[2] ?? (match[3] ? parseModes(match[3]) : "n");
       const lhs = match[5] ?? "";
@@ -529,7 +542,10 @@ export function parseTmux(paths: readonly string[]): Binding[] {
       const { index, table } = parseTmuxFlags(words, "prefix");
       const rawKey = words[index];
       if (rawKey === undefined) {
-        throw new AgentkeysError(`Malformed tmux binding at ${path}:${lineNumber}`);
+        throw new AgentkeysError(
+          `Malformed tmux binding at ${path}:${lineNumber}`,
+          "malformed_config",
+        );
       }
       const key = normalizeTmuxKey(rawKey);
       if (key === undefined) continue;
@@ -663,7 +679,7 @@ function directoryEntries(directory: string, suffix: string, label: string): str
       .map((entry) => join(directory, entry));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new AgentkeysError(`Cannot inspect ${label}: ${message}`);
+    throw new AgentkeysError(`Cannot inspect ${label}: ${message}`, "unreadable_config");
   }
 }
 

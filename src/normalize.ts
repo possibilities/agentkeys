@@ -117,30 +117,16 @@ const GHOSTTY_KEYS: Record<string, string> = {
 
 // Ghostty qualifies a trigger with flags that change when or how it fires,
 // never which chord it is.
-const GHOSTTY_TRIGGER_PREFIXES = [
-  "global:",
-  "all:",
-  "performable:",
-  "unconsumed:",
-  "physical:",
-];
+const GHOSTTY_TRIGGER_PREFIXES = ["global:", "all:", "performable:", "unconsumed:", "physical:"];
 
 export function normalizeModifiers(mods: readonly string[]): string[] {
-  const seen = new Set(
-    mods.map((mod) => mod.toLowerCase()).filter((mod) => mod !== ""),
-  );
+  const seen = new Set(mods.map((mod) => mod.toLowerCase()).filter((mod) => mod !== ""));
   const ordered = MODIFIER_ORDER.filter((mod) => seen.has(mod));
-  const extras = [...seen].filter(
-    (mod) => !MODIFIER_ORDER.includes(mod as Modifier),
-  );
+  const extras = [...seen].filter((mod) => !MODIFIER_ORDER.includes(mod as Modifier));
   return [...ordered, ...extras];
 }
 
-export function buildKey(
-  modifiers: readonly string[],
-  base: string,
-  prefix = "",
-): string {
+export function buildKey(modifiers: readonly string[], base: string, prefix = ""): string {
   const parts: string[] = [];
   if (prefix !== "") parts.push(prefix.toLowerCase());
   parts.push(...normalizeModifiers(modifiers));
@@ -149,8 +135,7 @@ export function buildKey(
 }
 
 function normalizePlainNvimSegment(segment: string): string {
-  if (/^[A-Z]$/.test(segment))
-    return buildKey(["shift"], segment.toLowerCase());
+  if (/^[A-Z]$/.test(segment)) return buildKey(["shift"], segment.toLowerCase());
   return segment.toLowerCase();
 }
 

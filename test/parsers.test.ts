@@ -42,10 +42,7 @@ test("Karabiner parser handles conditions, actions, optional modifiers, and skip
                     conditions: [
                       {
                         type: "frontmost_application_if",
-                        bundle_identifiers: [
-                          "^com.google.Chrome$",
-                          "^com.google.Chrome$",
-                        ],
+                        bundle_identifiers: ["^com.google.Chrome$", "^com.google.Chrome$"],
                       },
                       {
                         type: "device_if",
@@ -134,28 +131,17 @@ test("skhd parser binds keys named without a modifier", () => {
   const path = writeFixture(
     tempRoot(),
     "skhdrc",
-    ["f13 : yabai -m space --focus 1", "0x5A : yabai -m space --focus 8"].join(
-      "\n",
-    ),
+    ["f13 : yabai -m space --focus 1", "0x5A : yabai -m space --focus 8"].join("\n"),
   );
-  expect(parseSkhd(path).map((binding) => binding.key)).toEqual([
-    "f13",
-    "0x5a",
-  ]);
+  expect(parseSkhd(path).map((binding) => binding.key)).toEqual(["f13", "0x5a"]);
 });
 
 test("skhd parser reports malformed blocks and config-shaped lines", () => {
   const blockPath = writeFixture(tempRoot(), "skhdrc", "cmd - x [\n  nope\n");
   expect(() => parseSkhd(blockPath)).toThrow("Malformed skhd block");
 
-  const linePath = writeFixture(
-    tempRoot(),
-    "skhdrc",
-    "cmd + x : missing dash\n",
-  );
-  expect(() => parseSkhd(linePath)).toThrow(
-    `Malformed skhd binding at ${linePath}:1`,
-  );
+  const linePath = writeFixture(tempRoot(), "skhdrc", "cmd + x : missing dash\n");
+  expect(() => parseSkhd(linePath)).toThrow(`Malformed skhd binding at ${linePath}:1`);
 });
 
 test("Neovim parser handles direct keymaps, mode tables, multiline calls, and Copilot tables", () => {
@@ -174,19 +160,12 @@ test("Neovim parser handles direct keymaps, mode tables, multiline calls, and Co
   const plugin = writeFixture(
     root,
     "copilot.lua",
-    [
-      "return {",
-      "  keymap = {",
-      "    accept = '<C-l>',",
-      "    next = '<M-]>',",
-      "  },",
-      "}",
-    ].join("\n"),
+    ["return {", "  keymap = {", "    accept = '<C-l>',", "    next = '<M-]>',", "  },", "}"].join(
+      "\n",
+    ),
   );
 
-  expect(
-    parseNvim([init, plugin]).map((binding) => binding.toRecord()),
-  ).toEqual([
+  expect(parseNvim([init, plugin]).map((binding) => binding.toRecord())).toEqual([
     {
       layer: "nvim",
       key: "space+f",
@@ -233,9 +212,7 @@ test("Neovim parser reports collected keymap candidates that cannot be parsed", 
     "init.lua",
     "local x = 1\nvim.keymap.set('n', dynamic_lhs, ':Nope<CR>')\nlocal y = 2\n",
   );
-  expect(() => parseNvim([path])).toThrow(
-    `Malformed Neovim keymap at ${path}:2`,
-  );
+  expect(() => parseNvim([path])).toThrow(`Malformed Neovim keymap at ${path}:2`);
 });
 
 test("tmux parser separates root, prefix, and mode tables and follows unbind", () => {
@@ -262,11 +239,7 @@ test("tmux parser separates root, prefix, and mode tables and follows unbind", (
   );
 
   expect(
-    parseTmux([conf]).map((binding) => [
-      binding.key,
-      binding.mode,
-      binding.isLayerScoped,
-    ]),
+    parseTmux([conf]).map((binding) => [binding.key, binding.mode, binding.isLayerScoped]),
   ).toEqual([
     ["ctrl+space", "", false],
     ["prefix+ctrl+space", "", true],
@@ -290,10 +263,7 @@ test("tmux file discovery follows literal source-file and conf.d fragments", () 
     tmuxConf: join(root, "tmux", "tmux.conf"),
     tmuxConfD: join(root, "tmux", "conf.d"),
   };
-  expect(parseTmux(tmuxFiles(paths)).map((binding) => binding.key)).toEqual([
-    "alt+a",
-    "alt+b",
-  ]);
+  expect(parseTmux(tmuxFiles(paths)).map((binding) => binding.key)).toEqual(["alt+a", "alt+b"]);
 });
 
 test("Ghostty parser reads triggers, passthrough actions, and unbind", () => {
@@ -313,11 +283,7 @@ test("Ghostty parser reads triggers, passthrough actions, and unbind", () => {
   );
 
   expect(
-    bindings.map((binding) => [
-      binding.key,
-      binding.passthrough,
-      binding.isLayerScoped,
-    ]),
+    bindings.map((binding) => [binding.key, binding.passthrough, binding.isLayerScoped]),
   ).toEqual([
     ["cmd+shift+,", false, false],
     ["cmd+=", false, false],
@@ -345,9 +311,7 @@ test("collectAll accepts injected paths, reports sources, and treats missing fil
   });
 
   expect(inventory.bindings.map((binding) => binding.key)).toEqual(["cmd+a"]);
-  expect(
-    inventory.sources.map((source) => [source.layer, source.found]),
-  ).toEqual([
+  expect(inventory.sources.map((source) => [source.layer, source.found])).toEqual([
     ["karabiner", false],
     ["skhd", true],
     ["ghostty", false],

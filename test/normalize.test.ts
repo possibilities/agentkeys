@@ -19,16 +19,9 @@ test("canonical modifier order and aliases", () => {
 });
 
 test("normalizes source-specific key names", () => {
-  expect(normalizeKarabinerMods(["left_command", "right_option"])).toEqual([
-    "cmd",
-    "alt",
-  ]);
+  expect(normalizeKarabinerMods(["left_command", "right_option"])).toEqual(["cmd", "alt"]);
   expect(normalizeKarabinerKey("return_or_enter")).toBe("return");
-  expect(normalizeSkhdMods("control + option + shift")).toEqual([
-    "ctrl",
-    "alt",
-    "shift",
-  ]);
+  expect(normalizeSkhdMods("control + option + shift")).toEqual(["ctrl", "alt", "shift"]);
 });
 
 test("normalizes tmux key notation and skips pointer input", () => {

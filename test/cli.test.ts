@@ -25,8 +25,7 @@ test("top-level and leaf help are descriptor-backed", async () => {
 });
 
 const LAYER_CHOICES = ["karabiner", "skhd", "ghostty", "tmux", "nvim"];
-const LAYER_SUMMARY =
-  "Filter to a binding layer: karabiner|skhd|ghostty|tmux|nvim";
+const LAYER_SUMMARY = "Filter to a binding layer: karabiner|skhd|ghostty|tmux|nvim";
 
 test("leaf help-json projects stable public discovery schema", async () => {
   const expected = {
@@ -142,12 +141,9 @@ test("top-level agent discovery flags work", async () => {
 test("CLI lists, filters, and renders default JSON", async () => {
   const home = tempHome();
   writeDefaultConfigs(home);
-  const result = await runCli(
-    ["list-bindings", "--layer", "skhd", "--modifier", "shift+cmd"],
-    {
-      HOME: home,
-    },
-  );
+  const result = await runCli(["list-bindings", "--layer", "skhd", "--modifier", "shift+cmd"], {
+    HOME: home,
+  });
   expect(result.exitCode).toBe(0);
   const rows = JSON.parse(result.stdout) as Array<{
     layer: string;
@@ -186,14 +182,11 @@ test("CLI cheatsheet, doctor, table, and availability reports", async () => {
   expect(doctor.stdout).toContain("## Sources");
   expect(doctor.stdout).toContain("| tmux |");
 
-  const available = await runCli(
-    ["find-available", "--modifier", "shift+cmd", "--layer", "skhd"],
-    { HOME: home },
-  );
+  const available = await runCli(["find-available", "--modifier", "shift+cmd", "--layer", "skhd"], {
+    HOME: home,
+  });
   expect(available.exitCode).toBe(0);
-  expect(available.stdout).toContain(
-    "Available slots for cmd+shift+* at skhd layer",
-  );
+  expect(available.stdout).toContain("Available slots for cmd+shift+* at skhd layer");
 
   const explain = await runCli(["explain", "--key", "cmd+shift+h"], {
     HOME: home,
@@ -201,10 +194,9 @@ test("CLI cheatsheet, doctor, table, and availability reports", async () => {
   expect(explain.exitCode).toBe(0);
   expect(explain.stdout).toContain("Verdict: taken by karabiner.");
 
-  const explainJson = await runCli(
-    ["explain", "--key", "cmd+shift+4", "--format", "json"],
-    { HOME: home },
-  );
+  const explainJson = await runCli(["explain", "--key", "cmd+shift+4", "--format", "json"], {
+    HOME: home,
+  });
   expect(explainJson.exitCode).toBe(0);
   expect(JSON.parse(explainJson.stdout)).toMatchObject({
     key: "cmd+shift+4",

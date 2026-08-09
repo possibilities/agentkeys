@@ -51,18 +51,13 @@ function stringArray(value: unknown): string[] {
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 function bundleIdsToLabel(bundleIds: readonly string[]): string {
   const names: string[] = [];
   for (const bundleId of bundleIds) {
-    const clean = bundleId
-      .replace(/^\^/, "")
-      .replace(/\$$/, "")
-      .replaceAll("\\.", ".");
+    const clean = bundleId.replace(/^\^/, "").replace(/\$$/, "").replaceAll("\\.", ".");
     const parts = clean.split(".");
     const name = parts[parts.length - 1] ?? clean;
     if (!names.includes(name)) names.push(name);
@@ -121,11 +116,8 @@ export function parseKarabiner(path: string): Binding[] {
 
   for (const rawRule of rules) {
     const rule = objectValue(rawRule);
-    const description =
-      typeof rule.description === "string" ? rule.description : "";
-    const manipulators = Array.isArray(rule.manipulators)
-      ? rule.manipulators
-      : [];
+    const description = typeof rule.description === "string" ? rule.description : "";
+    const manipulators = Array.isArray(rule.manipulators) ? rule.manipulators : [];
     for (const rawManipulator of manipulators) {
       const manipulator = objectValue(rawManipulator);
       const from = objectValue(manipulator.from);
@@ -133,25 +125,18 @@ export function parseKarabiner(path: string): Binding[] {
       if (keyCode === "" || isModifierOnlyKarabinerKey(keyCode)) continue;
 
       const modifiers = objectValue(from.modifiers);
-      const mandatory = normalizeKarabinerMods(
-        stringArray(modifiers.mandatory),
-      );
+      const mandatory = normalizeKarabinerMods(stringArray(modifiers.mandatory));
       const optional = stringArray(modifiers.optional);
       const key = buildKey(mandatory, normalizeKarabinerKey(keyCode));
       const contextParts: string[] = [];
-      const conditions = Array.isArray(manipulator.conditions)
-        ? manipulator.conditions
-        : [];
+      const conditions = Array.isArray(manipulator.conditions) ? manipulator.conditions : [];
       for (const rawCondition of conditions) {
         const condition = objectValue(rawCondition);
         if (condition.type === "frontmost_application_if") {
           const bundleIds = stringArray(condition.bundle_identifiers);
-          if (bundleIds.length > 0)
-            contextParts.push(bundleIdsToLabel(bundleIds));
+          if (bundleIds.length > 0) contextParts.push(bundleIdsToLabel(bundleIds));
         } else if (condition.type === "device_if") {
-          const identifiers = Array.isArray(condition.identifiers)
-            ? condition.identifiers
-            : [];
+          const identifiers = Array.isArray(condition.identifiers) ? condition.identifiers : [];
           for (const rawIdentifier of identifiers) {
             const identifier = objectValue(rawIdentifier);
             if (identifier.is_built_in_keyboard === true) {
@@ -160,13 +145,8 @@ export function parseKarabiner(path: string): Binding[] {
           }
         }
       }
-      if (
-        optional.length > 0 &&
-        !(optional.length === 1 && optional[0] === "any")
-      ) {
-        contextParts.push(
-          `${normalizeKarabinerMods(optional).join("+")} passthrough`,
-        );
+      if (optional.length > 0 && !(optional.length === 1 && optional[0] === "any")) {
+        contextParts.push(`${normalizeKarabinerMods(optional).join("+")} passthrough`);
       }
 
       let action = describeKarabinerTo(manipulator.to);
@@ -219,10 +199,7 @@ export function parseSkhd(path: string): Binding[] {
     const bareBlockMatch = blockMatch ? null : stripped.match(SKHD_BLOCK_BARE);
     if (blockMatch || bareBlockMatch) {
       const normalized = blockMatch
-        ? buildKey(
-            normalizeSkhdMods(blockMatch[1] ?? ""),
-            (blockMatch[2] ?? "").toLowerCase(),
-          )
+        ? buildKey(normalizeSkhdMods(blockMatch[1] ?? ""), (blockMatch[2] ?? "").toLowerCase())
         : buildKey([], (bareBlockMatch?.[1] ?? "").toLowerCase());
       index += 1;
       let closed = false;
@@ -260,16 +237,11 @@ export function parseSkhd(path: string): Binding[] {
             }),
           );
         } else if (blockStripped !== "" && !blockStripped.startsWith("#")) {
-          throw new AgentkeysError(
-            `Malformed skhd block at ${path}:${blockLine.lineNumber}`,
-          );
+          throw new AgentkeysError(`Malformed skhd block at ${path}:${blockLine.lineNumber}`);
         }
         index += 1;
       }
-      if (!closed)
-        throw new AgentkeysError(
-          `Unclosed skhd block at ${path}:${lineNumber}`,
-        );
+      if (!closed) throw new AgentkeysError(`Unclosed skhd block at ${path}:${lineNumber}`);
       continue;
     }
 
@@ -285,17 +257,13 @@ export function parseSkhd(path: string): Binding[] {
                 (simpleMatch[2] ?? "").toLowerCase(),
               )
             : buildKey([], (bareMatch?.[1] ?? "").toLowerCase()),
-          action: (
-            (simpleMatch ? simpleMatch[3] : bareMatch?.[2]) ?? ""
-          ).trim(),
+          action: ((simpleMatch ? simpleMatch[3] : bareMatch?.[2]) ?? "").trim(),
           sourceFile: path,
           sourceLine: lineNumber,
         }),
       );
     } else if (stripped.includes(":") || stripped.includes("-")) {
-      throw new AgentkeysError(
-        `Malformed skhd binding at ${path}:${lineNumber}`,
-      );
+      throw new AgentkeysError(`Malformed skhd binding at ${path}:${lineNumber}`);
     }
     index += 1;
   }
@@ -336,16 +304,11 @@ function parenDelta(line: string): number {
   return delta;
 }
 
-function keymapStatements(
-  lines: readonly string[],
-): Array<{ lineNumber: number; text: string }> {
+function keymapStatements(lines: readonly string[]): Array<{ lineNumber: number; text: string }> {
   const statements: Array<{ lineNumber: number; text: string }> = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (
-      line.trimStart().startsWith("--") ||
-      !line.includes("vim.keymap.set(")
-    ) {
+    if (line.trimStart().startsWith("--") || !line.includes("vim.keymap.set(")) {
       continue;
     }
     let statement = line.trim();
@@ -363,9 +326,7 @@ function keymapStatements(
 }
 
 function parseModes(modeTable: string): string {
-  const matches = [...modeTable.matchAll(/["']([^"']+)["']/g)].map(
-    (match) => match[1],
-  );
+  const matches = [...modeTable.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
   return matches.filter((mode): mode is string => mode !== undefined).join(",");
 }
 
@@ -394,9 +355,7 @@ export function parseNvim(paths: readonly string[]): Binding[] {
     for (const statement of keymapStatements(lines)) {
       const match = statement.text.match(NVIM_KEYMAP);
       if (!match) {
-        throw new AgentkeysError(
-          `Malformed Neovim keymap at ${path}:${statement.lineNumber}`,
-        );
+        throw new AgentkeysError(`Malformed Neovim keymap at ${path}:${statement.lineNumber}`);
       }
       const mode = match[2] ?? (match[3] ? parseModes(match[3]) : "n");
       const lhs = match[5] ?? "";
@@ -539,11 +498,8 @@ export function parseTmux(paths: readonly string[]): Binding[] {
         command === "setw" ||
         command === "set-window-option"
       ) {
-        const at = words.findIndex(
-          (word) => word === "prefix" || word === "prefix2",
-        );
-        const key =
-          at === -1 ? undefined : normalizeTmuxKey(words[at + 1] ?? "");
+        const at = words.findIndex((word) => word === "prefix" || word === "prefix2");
+        const key = at === -1 ? undefined : normalizeTmuxKey(words[at + 1] ?? "");
         if (key !== undefined && key !== "none") {
           entries.push({
             table: "root",
@@ -564,9 +520,7 @@ export function parseTmux(paths: readonly string[]): Binding[] {
         const { index, table } = parseTmuxFlags(words, "prefix");
         const key = normalizeTmuxKey(words[index] ?? "");
         if (key === undefined) continue;
-        entries = entries.filter(
-          (entry) => !(entry.table === table && entry.key === key),
-        );
+        entries = entries.filter((entry) => !(entry.table === table && entry.key === key));
         continue;
       }
 
@@ -575,9 +529,7 @@ export function parseTmux(paths: readonly string[]): Binding[] {
       const { index, table } = parseTmuxFlags(words, "prefix");
       const rawKey = words[index];
       if (rawKey === undefined) {
-        throw new AgentkeysError(
-          `Malformed tmux binding at ${path}:${lineNumber}`,
-        );
+        throw new AgentkeysError(`Malformed tmux binding at ${path}:${lineNumber}`);
       }
       const key = normalizeTmuxKey(rawKey);
       if (key === undefined) continue;
@@ -673,9 +625,7 @@ function resolveGhosttyBin(): string {
   // An explicit empty value disables the probe, leaving the config file as the
   // only source — what a hermetic test wants.
   if (override !== undefined) return override;
-  return (
-    Bun.which("ghostty") ?? (existsSync(GHOSTTY_APP_BIN) ? GHOSTTY_APP_BIN : "")
-  );
+  return Bun.which("ghostty") ?? (existsSync(GHOSTTY_APP_BIN) ? GHOSTTY_APP_BIN : "");
 }
 
 // Every layer is read from the location its own tool documents, so agentkeys
@@ -685,12 +635,9 @@ export function defaultPaths(home = process.env.HOME ?? ""): ConfigPaths {
   const config = join(home, ".config");
   const env = process.env;
   return {
-    karabiner:
-      env.AGENTKEYS_KARABINER_CONFIG ??
-      join(config, "karabiner", "karabiner.json"),
+    karabiner: env.AGENTKEYS_KARABINER_CONFIG ?? join(config, "karabiner", "karabiner.json"),
     skhd: env.AGENTKEYS_SKHD_CONFIG ?? join(config, "skhd", "skhdrc"),
-    ghosttyConfig:
-      env.AGENTKEYS_GHOSTTY_CONFIG ?? join(config, "ghostty", "config"),
+    ghosttyConfig: env.AGENTKEYS_GHOSTTY_CONFIG ?? join(config, "ghostty", "config"),
     ghosttyBin: resolveGhosttyBin(),
     tmuxConf: env.AGENTKEYS_TMUX_CONFIG ?? join(config, "tmux", "tmux.conf"),
     tmuxConfD: join(
@@ -706,11 +653,7 @@ export function defaultPaths(home = process.env.HOME ?? ""): ConfigPaths {
   };
 }
 
-function directoryEntries(
-  directory: string,
-  suffix: string,
-  label: string,
-): string[] {
+function directoryEntries(directory: string, suffix: string, label: string): string[] {
   if (!existsSync(directory)) return [];
   try {
     if (!statSync(directory).isDirectory()) return [];
@@ -725,10 +668,7 @@ function directoryEntries(
 }
 
 export function nvimFiles(paths: ConfigPaths): string[] {
-  return [
-    paths.nvimInit,
-    ...directoryEntries(paths.nvimPlugins, ".lua", paths.nvimPlugins),
-  ];
+  return [paths.nvimInit, ...directoryEntries(paths.nvimPlugins, ".lua", paths.nvimPlugins)];
 }
 
 const TMUX_SOURCE = /^\s*(?:source-file|source)\s+(?:-\S+\s+)*(\S+)\s*$/;
@@ -748,9 +688,7 @@ function tmuxSourced(path: string, seen: Set<string>): string[] {
     const expanded = target.startsWith("~/")
       ? join(process.env.HOME ?? "", target.slice(2))
       : target;
-    const absolute = isAbsolute(expanded)
-      ? expanded
-      : resolve(dirname(path), expanded);
+    const absolute = isAbsolute(expanded) ? expanded : resolve(dirname(path), expanded);
     if (seen.has(absolute)) continue;
     seen.add(absolute);
     files.push(absolute, ...tmuxSourced(absolute, seen));
@@ -814,8 +752,7 @@ function collectGhostty(paths: ConfigPaths): {
   }
 
   const text = readExistingText(paths.ghosttyConfig);
-  const bindings =
-    text === undefined ? [] : parseGhostty(text, paths.ghosttyConfig);
+  const bindings = text === undefined ? [] : parseGhostty(text, paths.ghosttyConfig);
   return {
     bindings,
     source: {
@@ -838,13 +775,7 @@ export function collectAll(paths: Partial<ConfigPaths> = {}): Inventory {
   const nvimBindings = parseNvim(nvim);
 
   return {
-    bindings: [
-      ...karabiner,
-      ...skhd,
-      ...ghostty.bindings,
-      ...tmuxBindings,
-      ...nvimBindings,
-    ],
+    bindings: [...karabiner, ...skhd, ...ghostty.bindings, ...tmuxBindings, ...nvimBindings],
     sources: [
       {
         layer: "karabiner",

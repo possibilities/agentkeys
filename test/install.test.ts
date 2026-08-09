@@ -89,9 +89,7 @@ function git(...args: string[]): string {
   return result.stdout.toString().trim();
 }
 
-function previousCheckout(
-  origin = "https://github.com/possibilities/agentkeys.git",
-) {
+function previousCheckout(origin = "https://github.com/possibilities/agentkeys.git") {
   const checkout = mkdtempSync(join(tmpdir(), "agentkeys-previous-"));
   mkdirSync(join(checkout, "src"));
   const cli = join(checkout, "src", "cli.ts");
@@ -144,9 +142,7 @@ test("installer recovers a current source link with an old valid receipt", async
 
 test("installer migrates an exact previous-checkout source symlink", async () => {
   const installLayout = layout();
-  const previous = previousCheckout(
-    "git@github.com:possibilities/agentkeys.git",
-  );
+  const previous = previousCheckout("git@github.com:possibilities/agentkeys.git");
   symlinkSync(previous.cli, installLayout.target);
   writeFileSync(installLayout.receipt, `${previous.sha}\n`, { mode: 0o600 });
 
@@ -195,9 +191,7 @@ test("installer refuses foreign command files and symlinks", async () => {
 
 test("installer refuses a previous checkout with a foreign origin", async () => {
   const installLayout = layout();
-  const previous = previousCheckout(
-    "https://example.com/possibilities/agentkeys.git",
-  );
+  const previous = previousCheckout("https://example.com/possibilities/agentkeys.git");
   symlinkSync(previous.cli, installLayout.target);
 
   const result = await runInstall(installLayout, "--install");
@@ -233,12 +227,7 @@ test("a fork installs from its own checkout with the expected-origin override", 
   const installLayout = layout();
   const fork = forkCheckout();
 
-  const refused = await runInstallScript(
-    fork.installScript,
-    installLayout,
-    {},
-    "--install",
-  );
+  const refused = await runInstallScript(fork.installScript, installLayout, {}, "--install");
   expect(refused.exitCode).toBe(1);
   expect(refused.stderr).toContain("foreign origin");
 
@@ -268,10 +257,7 @@ test("installer refuses symlinked and unsafe writable directories", async () => 
   const symlinked = layout();
   const linkedBin = join(symlinked.root, "linked-bin");
   symlinkSync(symlinked.binDir, linkedBin);
-  const symlinkResult = await runInstall(
-    { ...symlinked, binDir: linkedBin },
-    "--install",
-  );
+  const symlinkResult = await runInstall({ ...symlinked, binDir: linkedBin }, "--install");
   expect(symlinkResult.exitCode).toBe(1);
   expect(symlinkResult.stderr).toContain("symlinked bin path");
 
@@ -283,12 +269,8 @@ test("installer refuses symlinked and unsafe writable directories", async () => 
     symlinkSync(realParent, linkedParent);
     const result = await runInstall(
       {
-        binDir:
-          destination === "bin" ? join(linkedParent, "bin") : nested.binDir,
-        stateDir:
-          destination === "state"
-            ? join(linkedParent, "state")
-            : nested.stateDir,
+        binDir: destination === "bin" ? join(linkedParent, "bin") : nested.binDir,
+        stateDir: destination === "state" ? join(linkedParent, "state") : nested.stateDir,
       },
       "--install",
     );

@@ -145,27 +145,19 @@ function commandByName(name: string): CommandDescriptor | undefined {
   return COMMANDS.find((command) => command.name === name);
 }
 
-function flagByName(
-  flags: readonly FlagDescriptor[],
-  name: string,
-): FlagDescriptor | undefined {
+function flagByName(flags: readonly FlagDescriptor[], name: string): FlagDescriptor | undefined {
   return flags.find((flag) => flag.name === name);
 }
 
-function parseFlags(
-  args: readonly string[],
-  descriptor: CommandDescriptor,
-): ParsedFlags {
+function parseFlags(args: readonly string[], descriptor: CommandDescriptor): ParsedFlags {
   const values: ParsedFlags = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
-    if (!arg.startsWith("--"))
-      throw new UsageError(`Unexpected argument: ${arg}`);
+    if (!arg.startsWith("--")) throw new UsageError(`Unexpected argument: ${arg}`);
     const [rawName, inlineValue] = arg.slice(2).split("=", 2);
     const name = rawName ?? "";
     const flag = flagByName(descriptor.flags, name);
-    if (!flag)
-      throw new UsageError(`Unknown option for ${descriptor.name}: --${name}`);
+    if (!flag) throw new UsageError(`Unknown option for ${descriptor.name}: --${name}`);
     if (flag.type === "boolean") {
       if (inlineValue !== undefined) {
         throw new UsageError(`Option --${name} does not take a value`);
@@ -196,7 +188,7 @@ function parseFlags(
 }
 
 function parseTop(args: readonly string[]): {
-  command?: string;
+  command?: string | undefined;
   rest: string[];
 } {
   if (args.length === 0) {
@@ -269,11 +261,7 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
     if (!layer || typeof flags.modifier !== "string") {
       throw new UsageError("find-available requires --modifier and --layer");
     }
-    writeStdout(
-      renderAvailable(
-        findAvailable(collectAll().bindings, flags.modifier, layer),
-      ),
-    );
+    writeStdout(renderAvailable(findAvailable(collectAll().bindings, flags.modifier, layer)));
     return 0;
   }
 

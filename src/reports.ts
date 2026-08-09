@@ -1,11 +1,5 @@
 import { stringify } from "yaml";
-import {
-  type Binding,
-  bindingsToRecords,
-  LAYERS,
-  type Layer,
-  priorityIndex,
-} from "./model.ts";
+import { type Binding, bindingsToRecords, LAYERS, type Layer, priorityIndex } from "./model.ts";
 import { buildKey, normalizeModifierCombo } from "./normalize.ts";
 import type { LayerSource } from "./parsers.ts";
 import { type Reservation, reservationsFor } from "./reserved.ts";
@@ -15,22 +9,8 @@ export type OutputFormat = "json" | "yaml" | "table";
 export const ALPHA_KEYS = Array.from({ length: 26 }, (_, index) =>
   String.fromCharCode("a".charCodeAt(0) + index),
 );
-export const DIGIT_KEYS = Array.from({ length: 10 }, (_, index) =>
-  String(index),
-);
-export const PUNCT_KEYS = [
-  "-",
-  "=",
-  "[",
-  "]",
-  "\\",
-  ";",
-  "'",
-  ",",
-  ".",
-  "/",
-  "`",
-] as const;
+export const DIGIT_KEYS = Array.from({ length: 10 }, (_, index) => String(index));
+export const PUNCT_KEYS = ["-", "=", "[", "]", "\\", ";", "'", ",", ".", "/", "`"] as const;
 export const SPECIAL_KEYS = [
   "return",
   "escape",
@@ -55,16 +35,11 @@ export const SPECIAL_KEYS = [
   "f11",
   "f12",
 ] as const;
-export const ALL_KEYS = [
-  ...ALPHA_KEYS,
-  ...DIGIT_KEYS,
-  ...PUNCT_KEYS,
-  ...SPECIAL_KEYS,
-];
+export const ALL_KEYS = [...ALPHA_KEYS, ...DIGIT_KEYS, ...PUNCT_KEYS, ...SPECIAL_KEYS];
 
 export interface BindingFilters {
-  layer?: Layer;
-  modifier?: string;
+  layer?: Layer | undefined;
+  modifier?: string | undefined;
 }
 
 export interface Conflict {
@@ -87,17 +62,10 @@ function modifierMatches(binding: Binding, modifier: string): boolean {
   return binding.key.split("+").includes(canonical);
 }
 
-export function filterBindings(
-  bindings: readonly Binding[],
-  filters: BindingFilters,
-): Binding[] {
+export function filterBindings(bindings: readonly Binding[], filters: BindingFilters): Binding[] {
   return bindings.filter((binding) => {
-    if (filters.layer !== undefined && binding.layer !== filters.layer)
-      return false;
-    if (
-      filters.modifier !== undefined &&
-      !modifierMatches(binding, filters.modifier)
-    ) {
+    if (filters.layer !== undefined && binding.layer !== filters.layer) return false;
+    if (filters.modifier !== undefined && !modifierMatches(binding, filters.modifier)) {
       return false;
     }
     return true;
@@ -108,12 +76,8 @@ function tableEscape(value: string): string {
   return value.replaceAll("\n", " ");
 }
 
-export function renderBindings(
-  bindings: readonly Binding[],
-  format: OutputFormat,
-): string {
-  if (format === "json")
-    return `${JSON.stringify(bindingsToRecords(bindings), null, 2)}\n`;
+export function renderBindings(bindings: readonly Binding[], format: OutputFormat): string {
+  if (format === "json") return `${JSON.stringify(bindingsToRecords(bindings), null, 2)}\n`;
   if (format === "yaml") return stringify(bindingsToRecords(bindings));
   if (bindings.length === 0) return "No bindings found.\n";
 
@@ -162,32 +126,19 @@ export function detectConflicts(bindings: readonly Binding[]): Conflict[] {
     for (let higherIndex = 0; higherIndex < byLayer.length; higherIndex += 1) {
       const higher = byLayer[higherIndex];
       if (!higher) continue;
-      for (
-        let lowerIndex = higherIndex + 1;
-        lowerIndex < byLayer.length;
-        lowerIndex += 1
-      ) {
+      for (let lowerIndex = higherIndex + 1; lowerIndex < byLayer.length; lowerIndex += 1) {
         const lower = byLayer[lowerIndex];
         if (!lower) continue;
-        const unconditional = higher.bindings.filter(
-          (binding) => binding.context === "",
-        );
-        const relevantHigher =
-          unconditional.length > 0 ? unconditional : higher.bindings;
+        const unconditional = higher.bindings.filter((binding) => binding.context === "");
+        const relevantHigher = unconditional.length > 0 ? unconditional : higher.bindings;
         conflicts.push({
           key,
           kind: unconditional.length > 0 ? "shadow" : "conditional shadow",
           higherLayer: higher.layer,
           lowerLayer: lower.layer,
-          higherAction: distinct(
-            relevantHigher.map((binding) => binding.action),
-          ).join("; "),
-          lowerAction: distinct(
-            lower.bindings.map((binding) => binding.action),
-          ).join("; "),
-          higherContexts: distinct(
-            higher.bindings.map((binding) => binding.context),
-          ),
+          higherAction: distinct(relevantHigher.map((binding) => binding.action)).join("; "),
+          lowerAction: distinct(lower.bindings.map((binding) => binding.action)).join("; "),
+          higherContexts: distinct(higher.bindings.map((binding) => binding.context)),
         });
       }
     }
@@ -201,9 +152,7 @@ export function renderDoctor(
 ): string {
   const conflicts = detectConflicts(bindings);
   const shadows = conflicts.filter((conflict) => conflict.kind === "shadow");
-  const conditionals = conflicts.filter(
-    (conflict) => conflict.kind === "conditional shadow",
-  );
+  const conditionals = conflicts.filter((conflict) => conflict.kind === "conditional shadow");
 
   // A layer whose config was never found reads exactly like a layer with
   // nothing to report, so say which files were actually read before saying
@@ -245,9 +194,7 @@ export function renderDoctor(
     );
     for (const conflict of conditionals) {
       const context =
-        conflict.higherContexts.length > 0
-          ? ` (${conflict.higherContexts.join("; ")})`
-          : "";
+        conflict.higherContexts.length > 0 ? ` (${conflict.higherContexts.join("; ")})` : "";
       lines.push(
         `| \`${conflict.key}\` | ${conflict.higherLayer}: ${conflict.higherAction}${context} | ${conflict.lowerLayer}: ${conflict.lowerAction} |`,
       );
@@ -287,37 +234,20 @@ export function renderCheatsheet(
   for (const layer of LAYERS) {
     const layerBindings = byLayer.get(layer);
     if (!layerBindings) continue;
-    lines.push(
-      `## ${layer}`,
-      "",
-      "| Key | Action | Notes |",
-      "|-----|--------|-------|",
-    );
+    lines.push(`## ${layer}`, "", "| Key | Action | Notes |", "|-----|--------|-------|");
     for (const binding of [...layerBindings].sort((left, right) =>
       left.key.localeCompare(right.key),
     )) {
       const layers = [...(keyLayers.get(binding.key) ?? new Set<Layer>())];
       let conflict = "";
-      if (
-        layers.length > 1 &&
-        !binding.isLayerScoped &&
-        binding.isInterception
-      ) {
-        const highest = layers.sort(
-          (left, right) => priorityIndex(left) - priorityIndex(right),
-        )[0];
+      if (layers.length > 1 && !binding.isLayerScoped && binding.isInterception) {
+        const highest = layers.sort((left, right) => priorityIndex(left) - priorityIndex(right))[0];
         conflict = binding.layer === highest ? "**\\***" : "(shadowed)";
       }
-      const notes = [
-        binding.context,
-        binding.mode ? `[${binding.mode}]` : "",
-        conflict,
-      ]
+      const notes = [binding.context, binding.mode ? `[${binding.mode}]` : "", conflict]
         .filter((part) => part !== "")
         .join(" ");
-      lines.push(
-        `| \`${binding.key}\` | ${binding.action.replaceAll("|", "\\|")} | ${notes} |`,
-      );
+      lines.push(`| \`${binding.key}\` | ${binding.action.replaceAll("|", "\\|")} | ${notes} |`);
     }
     lines.push("");
   }
@@ -352,9 +282,7 @@ export function findAvailable(
     used: ALL_KEYS.filter((key) => used.has(key)),
     // Still free — nothing in the layer chain claims them — but well known
     // enough elsewhere that taking one has a cost worth naming.
-    reserved: available.flatMap((key) =>
-      reservationsFor(buildKey(modifier.split("+"), key)),
-    ),
+    reserved: available.flatMap((key) => reservationsFor(buildKey(modifier.split("+"), key))),
   };
 }
 
@@ -375,15 +303,12 @@ export function renderAvailable(result: AvailabilityResult): string {
   ];
   for (const [label, universe] of groups) {
     const available = result.available.filter((key) => universe.includes(key));
-    if (available.length > 0)
-      lines.push(`  ${`${label}:`.padEnd(9)} ${available.join(" ")}`);
+    if (available.length > 0) lines.push(`  ${`${label}:`.padEnd(9)} ${available.join(" ")}`);
   }
   if (result.reserved.length > 0) {
     lines.push("", "Free here, but well known elsewhere:");
     for (const reservation of result.reserved) {
-      lines.push(
-        `  ${reservation.key.padEnd(16)} ${reservation.owner}: ${reservation.action}`,
-      );
+      lines.push(`  ${reservation.key.padEnd(16)} ${reservation.owner}: ${reservation.action}`);
     }
   }
   return `${lines.join("\n")}\n`;
@@ -406,10 +331,7 @@ export interface KeyExplanation {
   verdict: string;
 }
 
-export function explainKey(
-  bindings: readonly Binding[],
-  keyInput: string,
-): KeyExplanation {
+export function explainKey(bindings: readonly Binding[], keyInput: string): KeyExplanation {
   const parts = keyInput
     .split("+")
     .map((part) => part.trim())
@@ -447,13 +369,9 @@ export function explainKey(
   });
 
   const reserved = reservationsFor(key);
-  const outright = distinct(
-    owners.filter((owner) => owner.verdict === "wins").map((o) => o.layer),
-  );
+  const outright = distinct(owners.filter((owner) => owner.verdict === "wins").map((o) => o.layer));
   const conditional = distinct(
-    owners
-      .filter((owner) => owner.verdict === "wins in context")
-      .map((o) => o.layer),
+    owners.filter((owner) => owner.verdict === "wins in context").map((o) => o.layer),
   );
   let verdict: string;
   if (outright.length > 0) {

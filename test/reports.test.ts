@@ -23,9 +23,7 @@ function tempRoot(): string {
 }
 
 test("binding records omit optional fields when empty and keep source line shape", () => {
-  expect(
-    new Binding({ layer: "nvim", key: "x", action: "plain" }).toRecord(),
-  ).toEqual({
+  expect(new Binding({ layer: "nvim", key: "x", action: "plain" }).toRecord()).toEqual({
     layer: "nvim",
     key: "x",
     action: "plain",
@@ -55,9 +53,7 @@ test("filters by layer and canonical modifier combo", () => {
     new Binding({ layer: "skhd", key: "cmd+shift+h", action: "one" }),
     new Binding({ layer: "nvim", key: "shift+h", action: "two" }),
   ];
-  expect(
-    filterBindings(bindings, { layer: "skhd", modifier: "shift+cmd" }),
-  ).toHaveLength(1);
+  expect(filterBindings(bindings, { layer: "skhd", modifier: "shift+cmd" })).toHaveLength(1);
   expect(filterBindings(bindings, { modifier: "shift" })).toHaveLength(2);
 });
 
@@ -76,9 +72,7 @@ test("conflicts honor priority, conditional shadows, and layer-scoped exclusion"
     new Binding({ layer: "nvim", key: "space+k", action: "leader" }),
   ];
 
-  expect(
-    detectConflicts(bindings).map((conflict) => [conflict.key, conflict.kind]),
-  ).toEqual([
+  expect(detectConflicts(bindings).map((conflict) => [conflict.key, conflict.kind])).toEqual([
     ["alt+x", "conditional shadow"],
     ["cmd+h", "shadow"],
   ]);
@@ -100,10 +94,7 @@ test("doctor aggregates contextual higher-layer records and ignores passthrough"
       ].join("\n"),
     ),
   );
-  const bindings = [
-    ...skhd,
-    new Binding({ layer: "nvim", key: "ctrl+l", action: "redraw" }),
-  ];
+  const bindings = [...skhd, new Binding({ layer: "nvim", key: "ctrl+l", action: "redraw" })];
 
   expect(detectConflicts(bindings)).toEqual([
     {
@@ -149,9 +140,7 @@ test("explain ranks every layer on a key and names well-known owners", () => {
 
   const explanation = explainKey(bindings, "control + L");
   expect(explanation.key).toBe("ctrl+l");
-  expect(
-    explanation.owners.map((owner) => [owner.layer, owner.verdict]),
-  ).toEqual([
+  expect(explanation.owners.map((owner) => [owner.layer, owner.verdict])).toEqual([
     ["skhd", "wins"],
     ["tmux", "shadowed"],
     ["nvim", "shadowed"],
@@ -183,9 +172,7 @@ test("availability uses the 69-key universe and priority blocking semantics", ()
   expect(nvim.available).not.toContain("a");
   expect(nvim.available).not.toContain("b");
   const availableText = renderAvailable(nvim);
-  expect(availableText).toContain(
-    "Available slots for cmd+shift+* at nvim layer",
-  );
+  expect(availableText).toContain("Available slots for cmd+shift+* at nvim layer");
   expect(availableText).toContain("  Letters:  ");
   expect(availableText).toContain("  Digits:   ");
   expect(availableText).toContain("  Punct:    ");
@@ -210,9 +197,7 @@ test("availability names free slots that well-known software already uses", () =
 });
 
 test("renders json, yaml, table, and empty binding output", () => {
-  const bindings = [
-    new Binding({ layer: "skhd", key: "cmd+a", action: "act" }),
-  ];
+  const bindings = [new Binding({ layer: "skhd", key: "cmd+a", action: "act" })];
   expect(renderBindings(bindings, "json")).toContain('"layer": "skhd"');
   expect(renderBindings(bindings, "yaml")).toContain("layer: skhd");
   expect(renderBindings(bindings, "table")).toBe(

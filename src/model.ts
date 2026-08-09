@@ -61,9 +61,7 @@ export class Binding {
     if (this.context !== "") record.context = this.context;
     if (this.passthrough) record.passthrough = true;
     if (this.sourceFile !== "") {
-      record.source = this.sourceLine
-        ? `${this.sourceFile}:${this.sourceLine}`
-        : this.sourceFile;
+      record.source = this.sourceLine ? `${this.sourceFile}:${this.sourceLine}` : this.sourceFile;
     }
     return record;
   }
@@ -83,10 +81,7 @@ export class Binding {
   // live only in one of its modes — so it cannot collide across layers. Some
   // parsers know this outright; the rest declare it by naming the prefix.
   get isLayerScoped(): boolean {
-    return (
-      this.scoped ||
-      SCOPE_PREFIXES.some((prefix) => this.key.startsWith(prefix))
-    );
+    return this.scoped || SCOPE_PREFIXES.some((prefix) => this.key.startsWith(prefix));
   }
 
   // Only a binding that consumes the key hides one below it. A layer that
@@ -97,9 +92,7 @@ export class Binding {
   }
 }
 
-export function bindingsToRecords(
-  bindings: readonly Binding[],
-): BindingRecord[] {
+export function bindingsToRecords(bindings: readonly Binding[]): BindingRecord[] {
   return bindings.map((binding) => binding.toRecord());
 }
 

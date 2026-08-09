@@ -115,6 +115,5 @@ export const COMMANDS = [
 
 export const PROGRAM = {
   name: "agentkeys",
-  description:
-    "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim",
+  description: "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim",
 } as const;

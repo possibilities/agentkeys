@@ -164,6 +164,56 @@ test("CLI lists, filters, and renders default JSON", async () => {
   ]);
 });
 
+// Regression: a Karabiner rule on key_code "comma" and a tmux binding on M-,
+// are the same physical chord. Before the punctuation alias table they parsed
+// as two different keys, each explain saw one layer, and doctor missed the
+// conditional shadow entirely.
+test("punctuation spelled by name and by symbol is one key", async () => {
+  const home = tempHome();
+  writeFixture(
+    home,
+    ".config/karabiner/karabiner.json",
+    JSON.stringify({
+      profiles: [
+        {
+          complex_modifications: {
+            rules: [
+              {
+                description: "Orca tab navigation",
+                manipulators: [
+                  {
+                    from: { key_code: "comma", modifiers: { mandatory: ["option"] } },
+                    conditions: [
+                      {
+                        type: "frontmost_application_if",
+                        bundle_identifiers: ["^com.orca.app$"],
+                      },
+                    ],
+                    to: [{ key_code: "close_bracket", modifiers: ["command", "shift"] }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  );
+  writeFixture(home, ".config/tmux/tmux.conf", "bind -n M-, select-pane -t :.- -Z\n");
+
+  const byName = await runCli(["explain", "--key", "alt+comma"], { HOME: home });
+  const bySymbol = await runCli(["explain", "--key", "alt+,"], { HOME: home });
+  expect(byName.exitCode).toBe(0);
+  expect(byName.stdout).toBe(bySymbol.stdout);
+  expect(byName.stdout).toContain("karabiner");
+  expect(byName.stdout).toContain("tmux");
+
+  const doctor = await runCli(["doctor"], { HOME: home });
+  expect(doctor.exitCode).toBe(0);
+  expect(doctor.stdout).toContain("## Conditional shadows (1)");
+  expect(doctor.stdout).toContain("`alt+,`");
+});
+
 test("CLI cheatsheet, doctor, table, and availability reports", async () => {
   const home = tempHome();
   writeDefaultConfigs(home);

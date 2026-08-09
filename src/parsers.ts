@@ -8,6 +8,7 @@ import {
   normalizeKarabinerKey,
   normalizeKarabinerMods,
   normalizeNvimKey,
+  normalizeSkhdKey,
   normalizeSkhdMods,
   normalizeTmuxKey,
 } from "./normalize.ts";
@@ -199,8 +200,8 @@ export function parseSkhd(path: string): Binding[] {
     const bareBlockMatch = blockMatch ? null : stripped.match(SKHD_BLOCK_BARE);
     if (blockMatch || bareBlockMatch) {
       const normalized = blockMatch
-        ? buildKey(normalizeSkhdMods(blockMatch[1] ?? ""), (blockMatch[2] ?? "").toLowerCase())
-        : buildKey([], (bareBlockMatch?.[1] ?? "").toLowerCase());
+        ? buildKey(normalizeSkhdMods(blockMatch[1] ?? ""), normalizeSkhdKey(blockMatch[2] ?? ""))
+        : buildKey([], normalizeSkhdKey(bareBlockMatch?.[1] ?? ""));
       index += 1;
       let closed = false;
       while (index < joined.length) {
@@ -261,9 +262,9 @@ export function parseSkhd(path: string): Binding[] {
           key: simpleMatch
             ? buildKey(
                 normalizeSkhdMods(simpleMatch[1] ?? ""),
-                (simpleMatch[2] ?? "").toLowerCase(),
+                normalizeSkhdKey(simpleMatch[2] ?? ""),
               )
-            : buildKey([], (bareMatch?.[1] ?? "").toLowerCase()),
+            : buildKey([], normalizeSkhdKey(bareMatch?.[1] ?? "")),
           action: ((simpleMatch ? simpleMatch[3] : bareMatch?.[2]) ?? "").trim(),
           sourceFile: path,
           sourceLine: lineNumber,

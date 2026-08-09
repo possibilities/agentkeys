@@ -1,7 +1,7 @@
 import { stringify } from "yaml";
 import { success } from "./envelope.ts";
 import { type Binding, bindingsToRecords, LAYERS, type Layer, priorityIndex } from "./model.ts";
-import { buildKey, normalizeModifierCombo } from "./normalize.ts";
+import { buildKey, normalizeBaseKey, normalizeModifierCombo } from "./normalize.ts";
 import type { LayerSource } from "./parsers.ts";
 import { type Reservation, reservationsFor } from "./reserved.ts";
 
@@ -338,7 +338,9 @@ export function explainKey(bindings: readonly Binding[], keyInput: string): KeyE
     .split("+")
     .map((part) => part.trim())
     .filter((part) => part !== "");
-  const base = (parts.pop() ?? "").toLowerCase();
+  // The query must land on the same spelling the parsers emit, or the two
+  // spellings of one physical key each report the other's bindings as absent.
+  const base = normalizeBaseKey(parts.pop() ?? "");
   const combo = normalizeModifierCombo(parts.join("+"));
   const key = combo === "" ? base : `${combo}+${base}`;
 

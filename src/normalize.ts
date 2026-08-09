@@ -16,6 +16,49 @@ const KARABINER_MODS: Record<string, string> = {
   right_shift: "shift",
 };
 
+// Every layer spells the same physical punctuation key its own way — Karabiner
+// key_codes, Ghostty names, Neovim angle names — while tmux and Neovim also
+// emit the bare symbol. The symbol is canonical; a spelling that escapes this
+// table splits one key into two and hides a real conflict.
+const PUNCTUATION_NAMES: Record<string, string> = {
+  comma: ",",
+  period: ".",
+  hyphen: "-",
+  minus: "-",
+  equal_sign: "=",
+  equal: "=",
+  open_bracket: "[",
+  left_bracket: "[",
+  close_bracket: "]",
+  right_bracket: "]",
+  semicolon: ";",
+  quote: "'",
+  apostrophe: "'",
+  slash: "/",
+  backslash: "\\",
+  bslash: "\\",
+  grave_accent_and_tilde: "`",
+  grave_accent: "`",
+  bar: "|",
+  lt: "<",
+};
+
+// skhd has no names for punctuation keys; configs reach them through macOS
+// virtual keycodes (kVK_ANSI_*), already lowercased by the caller.
+const SKHD_KEYCODES: Record<string, string> = {
+  "0x18": "=",
+  "0x1b": "-",
+  "0x1e": "]",
+  "0x21": "[",
+  "0x27": "'",
+  "0x29": ";",
+  "0x2a": "\\",
+  "0x2b": ",",
+  "0x2c": "/",
+  "0x2f": ".",
+  "0x32": "`",
+};
+
 const KARABINER_KEYS: Record<string, string> = {
   left_arrow: "left",
   right_arrow: "right",
@@ -100,19 +143,10 @@ const GHOSTTY_KEYS: Record<string, string> = {
   insert: "insert",
   home: "home",
   end: "end",
-  minus: "-",
-  equal: "=",
+  // Ghostty folds the plus spelling to the physical `=` key; that shift-level
+  // collapse is Ghostty's own convention, so it stays out of the shared table.
   plus: "=",
   "+": "=",
-  comma: ",",
-  period: ".",
-  slash: "/",
-  semicolon: ";",
-  apostrophe: "'",
-  grave_accent: "`",
-  backslash: "\\",
-  left_bracket: "[",
-  right_bracket: "]",
 };
 
 // Ghostty qualifies a trigger with flags that change when or how it fires,
@@ -160,9 +194,21 @@ export function normalizeModifierCombo(input: string): string {
   return normalizeModifiers(parts).join("+");
 }
 
+// The canonical spelling for a base key a user types, or that any layer's
+// table has no opinion on: fold the punctuation aliases, keep the rest.
+export function normalizeBaseKey(base: string): string {
+  const lower = base.toLowerCase();
+  return PUNCTUATION_NAMES[lower] ?? lower;
+}
+
 export function normalizeKarabinerKey(keyCode: string): string {
   const lower = keyCode.toLowerCase();
-  return KARABINER_KEYS[lower] ?? lower;
+  return KARABINER_KEYS[lower] ?? PUNCTUATION_NAMES[lower] ?? lower;
+}
+
+export function normalizeSkhdKey(key: string): string {
+  const lower = key.toLowerCase();
+  return SKHD_KEYCODES[lower] ?? PUNCTUATION_NAMES[lower] ?? lower;
 }
 
 export function normalizeKarabinerMods(mods: readonly string[]): string[] {
@@ -200,7 +246,8 @@ function normalizeAngleKey(innerInput: string): string {
   }
 
   if (inner.toLowerCase() === "leader") return "space";
-  const base = NVIM_KEYS[inner.toLowerCase()] ?? inner.toLowerCase();
+  const base =
+    NVIM_KEYS[inner.toLowerCase()] ?? PUNCTUATION_NAMES[inner.toLowerCase()] ?? inner.toLowerCase();
   return buildKey(mods, base);
 }
 
@@ -276,7 +323,7 @@ export function normalizeGhosttyKey(trigger: string): string | undefined {
     if (parts[parts.length - 1] === "") parts.pop();
   }
   const mods = parts.map((part) => GHOSTTY_MODS[part.toLowerCase()] ?? part);
-  return buildKey(mods, GHOSTTY_KEYS[base.toLowerCase()] ?? base);
+  return buildKey(mods, GHOSTTY_KEYS[base.toLowerCase()] ?? normalizeBaseKey(base));
 }
 
 export function normalizeNvimKey(lhs: string): string {

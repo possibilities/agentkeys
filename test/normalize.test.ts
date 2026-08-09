@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import {
   buildKey,
+  normalizeBaseKey,
   normalizeGhosttyKey,
   normalizeKarabinerKey,
   normalizeKarabinerMods,
   normalizeModifierCombo,
   normalizeNvimKey,
+  normalizeSkhdKey,
   normalizeSkhdMods,
   normalizeTmuxKey,
 } from "../src/normalize.ts";
@@ -22,6 +24,36 @@ test("normalizes source-specific key names", () => {
   expect(normalizeKarabinerMods(["left_command", "right_option"])).toEqual(["cmd", "alt"]);
   expect(normalizeKarabinerKey("return_or_enter")).toBe("return");
   expect(normalizeSkhdMods("control + option + shift")).toEqual(["ctrl", "alt", "shift"]);
+});
+
+// One physical punctuation key, five spellings: the symbol is canonical, so a
+// key spelled by name in one layer collides with the same key spelled as a
+// symbol in another instead of silently passing as two different keys.
+test("folds every layer's punctuation spelling to the symbol", () => {
+  expect(normalizeKarabinerKey("comma")).toBe(",");
+  expect(normalizeKarabinerKey("period")).toBe(".");
+  expect(normalizeKarabinerKey("hyphen")).toBe("-");
+  expect(normalizeKarabinerKey("equal_sign")).toBe("=");
+  expect(normalizeKarabinerKey("open_bracket")).toBe("[");
+  expect(normalizeKarabinerKey("close_bracket")).toBe("]");
+  expect(normalizeKarabinerKey("semicolon")).toBe(";");
+  expect(normalizeKarabinerKey("quote")).toBe("'");
+  expect(normalizeKarabinerKey("slash")).toBe("/");
+  expect(normalizeKarabinerKey("backslash")).toBe("\\");
+  expect(normalizeKarabinerKey("grave_accent_and_tilde")).toBe("`");
+  expect(normalizeSkhdKey("0x2B")).toBe(",");
+  expect(normalizeSkhdKey("0x21")).toBe("[");
+  expect(normalizeSkhdKey("0x32")).toBe("`");
+  expect(normalizeSkhdKey("x")).toBe("x");
+  expect(normalizeNvimKey("<M-Bar>")).toBe("alt+|");
+  expect(normalizeNvimKey("<M-Bslash>")).toBe("alt+\\");
+  expect(normalizeNvimKey("<lt>")).toBe("<");
+  expect(normalizeNvimKey("<M-[>")).toBe("alt+[");
+  expect(normalizeGhosttyKey("super+comma")).toBe("cmd+,");
+  expect(normalizeGhosttyKey("super+left_bracket")).toBe("cmd+[");
+  expect(normalizeBaseKey("comma")).toBe(",");
+  expect(normalizeBaseKey(",")).toBe(",");
+  expect(normalizeBaseKey("F5")).toBe("f5");
 });
 
 test("normalizes tmux key notation and skips pointer input", () => {

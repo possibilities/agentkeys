@@ -24,6 +24,10 @@ test("top-level and leaf help are descriptor-backed", async () => {
   expect(leaf.stdout).toContain("--layer");
 });
 
+const LAYER_CHOICES = ["karabiner", "skhd", "ghostty", "tmux", "nvim"];
+const LAYER_SUMMARY =
+  "Filter to a binding layer: karabiner|skhd|ghostty|tmux|nvim";
+
 test("leaf help-json projects stable public discovery schema", async () => {
   const expected = {
     "list-bindings": {
@@ -34,9 +38,9 @@ test("leaf help-json projects stable public discovery schema", async () => {
           name: "--layer",
           type: "choice",
           required: false,
-          choices: ["karabiner", "skhd", "nvim"],
+          choices: LAYER_CHOICES,
           positional: false,
-          description: "Filter to a binding layer: karabiner|skhd|nvim",
+          description: LAYER_SUMMARY,
         },
         {
           name: "--modifier",
@@ -63,9 +67,9 @@ test("leaf help-json projects stable public discovery schema", async () => {
           name: "--layer",
           type: "choice",
           required: false,
-          choices: ["karabiner", "skhd", "nvim"],
+          choices: LAYER_CHOICES,
           positional: false,
-          description: "Filter to a binding layer: karabiner|skhd|nvim",
+          description: LAYER_SUMMARY,
         },
       ],
     },
@@ -89,9 +93,30 @@ test("leaf help-json projects stable public discovery schema", async () => {
           name: "--layer",
           type: "choice",
           required: true,
-          choices: ["karabiner", "skhd", "nvim"],
+          choices: LAYER_CHOICES,
           positional: false,
-          description: "Required target layer: karabiner|skhd|nvim",
+          description: `Required target layer: ${LAYER_CHOICES.join("|")}`,
+        },
+      ],
+    },
+    explain: {
+      name: "explain",
+      description: "Show every layer and well-known app claiming one key",
+      arguments: [
+        {
+          name: "--key",
+          type: "text",
+          required: true,
+          positional: false,
+          description: "Required key or chord to explain, such as cmd+shift+v",
+        },
+        {
+          name: "--format",
+          type: "choice",
+          required: false,
+          choices: ["text", "json"],
+          positional: false,
+          description: "Output format: text|json (default text)",
         },
       ],
     },
@@ -158,6 +183,8 @@ test("CLI cheatsheet, doctor, table, and availability reports", async () => {
   const doctor = await runCli(["doctor"], { HOME: home });
   expect(doctor.exitCode).toBe(0);
   expect(doctor.stdout).toContain("conflict");
+  expect(doctor.stdout).toContain("## Sources");
+  expect(doctor.stdout).toContain("| tmux |");
 
   const available = await runCli(
     ["find-available", "--modifier", "shift+cmd", "--layer", "skhd"],
@@ -167,6 +194,23 @@ test("CLI cheatsheet, doctor, table, and availability reports", async () => {
   expect(available.stdout).toContain(
     "Available slots for cmd+shift+* at skhd layer",
   );
+
+  const explain = await runCli(["explain", "--key", "cmd+shift+h"], {
+    HOME: home,
+  });
+  expect(explain.exitCode).toBe(0);
+  expect(explain.stdout).toContain("Verdict: taken by karabiner.");
+
+  const explainJson = await runCli(
+    ["explain", "--key", "cmd+shift+4", "--format", "json"],
+    { HOME: home },
+  );
+  expect(explainJson.exitCode).toBe(0);
+  expect(JSON.parse(explainJson.stdout)).toMatchObject({
+    key: "cmd+shift+4",
+    owners: [],
+    verdict: "free in your config, but macOS uses it",
+  });
 });
 
 test("CLI no-match output stays machine-readable for machine formats", async () => {
@@ -203,11 +247,7 @@ test("CLI rejects bad arguments with nonzero status", async () => {
 
 test("CLI reports malformed readable config without a stack trace", async () => {
   const home = tempHome();
-  writeFixture(
-    home,
-    "code/dotfiles/karabiner/.config/karabiner/karabiner.json",
-    "{",
-  );
+  writeFixture(home, ".config/karabiner/karabiner.json", "{");
   const result = await runCli(["list-bindings"], { HOME: home });
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain("Malformed Karabiner JSON");

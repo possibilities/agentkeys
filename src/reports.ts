@@ -6,7 +6,9 @@ import {
   type Layer,
   priorityIndex,
 } from "./model.ts";
-import { normalizeModifierCombo } from "./normalize.ts";
+import { buildKey, normalizeModifierCombo } from "./normalize.ts";
+import type { LayerSource } from "./parsers.ts";
+import { type Reservation, reservationsFor } from "./reserved.ts";
 
 export type OutputFormat = "json" | "yaml" | "table";
 
@@ -73,10 +75,6 @@ export interface Conflict {
   higherAction: string;
   lowerAction: string;
   higherContexts: string[];
-}
-
-function isInterception(binding: Binding): boolean {
-  return binding.action !== "passthrough";
 }
 
 function distinct(values: readonly string[]): string[] {
@@ -154,7 +152,7 @@ export function detectConflicts(bindings: readonly Binding[]): Conflict[] {
     left.localeCompare(right),
   )) {
     if (entries.some((binding) => binding.isLayerScoped)) continue;
-    const realEntries = entries.filter(isInterception);
+    const realEntries = entries.filter((binding) => binding.isInterception);
     const byLayer = LAYERS.map((layer) => ({
       layer,
       bindings: realEntries.filter((binding) => binding.layer === layer),
@@ -197,14 +195,31 @@ export function detectConflicts(bindings: readonly Binding[]): Conflict[] {
   return conflicts;
 }
 
-export function renderDoctor(bindings: readonly Binding[]): string {
+export function renderDoctor(
+  bindings: readonly Binding[],
+  sources: readonly LayerSource[],
+): string {
   const conflicts = detectConflicts(bindings);
-  if (conflicts.length === 0) return "No cross-layer conflicts detected.\n";
   const shadows = conflicts.filter((conflict) => conflict.kind === "shadow");
   const conditionals = conflicts.filter(
     (conflict) => conflict.kind === "conditional shadow",
   );
-  const lines: string[] = [];
+
+  // A layer whose config was never found reads exactly like a layer with
+  // nothing to report, so say which files were actually read before saying
+  // anything about conflicts.
+  const lines: string[] = [
+    "## Sources",
+    "",
+    "| Layer | Source | Bindings |",
+    "|-------|--------|----------|",
+  ];
+  for (const source of sources) {
+    lines.push(
+      `| ${source.layer} | ${source.found ? source.source : `${source.source} (not found)`} | ${source.found ? source.bindings : "—"} |`,
+    );
+  }
+  lines.push("");
 
   if (shadows.length > 0) {
     lines.push(
@@ -241,7 +256,9 @@ export function renderDoctor(bindings: readonly Binding[]): string {
   }
 
   lines.push(
-    `${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} found.`,
+    conflicts.length === 0
+      ? "No cross-layer conflicts detected."
+      : `${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} found.`,
   );
   return `${lines.join("\n")}\n`;
 }
@@ -260,7 +277,7 @@ export function renderCheatsheet(
 
   const keyLayers = new Map<string, Set<Layer>>();
   for (const binding of allBindings) {
-    if (!isInterception(binding)) continue;
+    if (!binding.isInterception) continue;
     const layers = keyLayers.get(binding.key) ?? new Set<Layer>();
     layers.add(binding.layer);
     keyLayers.set(binding.key, layers);
@@ -284,7 +301,7 @@ export function renderCheatsheet(
       if (
         layers.length > 1 &&
         !binding.isLayerScoped &&
-        isInterception(binding)
+        binding.isInterception
       ) {
         const highest = layers.sort(
           (left, right) => priorityIndex(left) - priorityIndex(right),
@@ -312,6 +329,7 @@ export interface AvailabilityResult {
   layer: Layer;
   available: string[];
   used: string[];
+  reserved: Reservation[];
 }
 
 export function findAvailable(
@@ -326,11 +344,17 @@ export function findAvailable(
     if (!blockingLayers.has(binding.layer)) continue;
     if (binding.modifierCombo === modifier) used.add(binding.baseKey);
   }
+  const available = ALL_KEYS.filter((key) => !used.has(key));
   return {
     modifier,
     layer,
-    available: ALL_KEYS.filter((key) => !used.has(key)),
+    available,
     used: ALL_KEYS.filter((key) => used.has(key)),
+    // Still free — nothing in the layer chain claims them — but well known
+    // enough elsewhere that taking one has a cost worth naming.
+    reserved: available.flatMap((key) =>
+      reservationsFor(buildKey(modifier.split("+"), key)),
+    ),
   };
 }
 
@@ -354,5 +378,125 @@ export function renderAvailable(result: AvailabilityResult): string {
     if (available.length > 0)
       lines.push(`  ${`${label}:`.padEnd(9)} ${available.join(" ")}`);
   }
+  if (result.reserved.length > 0) {
+    lines.push("", "Free here, but well known elsewhere:");
+    for (const reservation of result.reserved) {
+      lines.push(
+        `  ${reservation.key.padEnd(16)} ${reservation.owner}: ${reservation.action}`,
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+export interface KeyOwner {
+  layer: Layer;
+  action: string;
+  context: string;
+  mode: string;
+  passthrough: boolean;
+  source: string;
+  verdict: "wins" | "wins in context" | "shadowed" | "scoped" | "transparent";
+}
+
+export interface KeyExplanation {
+  key: string;
+  owners: KeyOwner[];
+  reserved: Reservation[];
+  verdict: string;
+}
+
+export function explainKey(
+  bindings: readonly Binding[],
+  keyInput: string,
+): KeyExplanation {
+  const parts = keyInput
+    .split("+")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  const base = (parts.pop() ?? "").toLowerCase();
+  const combo = normalizeModifierCombo(parts.join("+"));
+  const key = combo === "" ? base : `${combo}+${base}`;
+
+  const matches = [...bindings.filter((binding) => binding.key === key)].sort(
+    (left, right) => priorityIndex(left.layer) - priorityIndex(right.layer),
+  );
+  let winnerFound = false;
+  const owners: KeyOwner[] = matches.map((binding) => {
+    let verdict: KeyOwner["verdict"];
+    if (binding.isLayerScoped) verdict = "scoped";
+    else if (!binding.isInterception) verdict = "transparent";
+    else if (winnerFound) verdict = "shadowed";
+    else if (binding.context === "") {
+      winnerFound = true;
+      verdict = "wins";
+    } else {
+      // A conditional binding claims the key only inside its context, so the
+      // layers beneath it still receive it everywhere else.
+      verdict = "wins in context";
+    }
+    return {
+      layer: binding.layer,
+      action: binding.action,
+      context: binding.context,
+      mode: binding.mode,
+      passthrough: binding.passthrough,
+      source: binding.toRecord().source ?? "",
+      verdict,
+    };
+  });
+
+  const reserved = reservationsFor(key);
+  const outright = distinct(
+    owners.filter((owner) => owner.verdict === "wins").map((o) => o.layer),
+  );
+  const conditional = distinct(
+    owners
+      .filter((owner) => owner.verdict === "wins in context")
+      .map((o) => o.layer),
+  );
+  let verdict: string;
+  if (outright.length > 0) {
+    verdict = `taken by ${outright.join(", ")}`;
+  } else if (conditional.length > 0) {
+    verdict = `taken by ${conditional.join(", ")}, but only in their listed contexts`;
+  } else if (reserved.length > 0) {
+    verdict = `free in your config, but ${reserved[0]?.owner} uses it`;
+  } else {
+    verdict = "free";
+  }
+
+  return { key, owners, reserved, verdict };
+}
+
+export function renderExplain(explanation: KeyExplanation): string {
+  const lines = [explanation.key, ""];
+
+  if (explanation.owners.length === 0) {
+    lines.push("No binding in any layer.");
+  } else {
+    lines.push("Bindings, highest priority first:");
+    for (const owner of explanation.owners) {
+      const notes = [owner.context, owner.mode ? `[${owner.mode}]` : ""]
+        .filter((note) => note !== "")
+        .join(" ");
+      lines.push(
+        `  ${owner.layer.padEnd(10)} ${owner.action}${notes ? ` (${notes})` : ""}`,
+        `  ${" ".repeat(10)} ${owner.verdict}${owner.source ? ` — ${owner.source}` : ""}`,
+      );
+    }
+  }
+
+  lines.push("");
+  if (explanation.reserved.length > 0) {
+    lines.push("Well known elsewhere:");
+    for (const reservation of explanation.reserved) {
+      lines.push(`  ${reservation.owner}: ${reservation.action}`);
+    }
+  } else {
+    lines.push("Well known elsewhere: nothing on record.");
+  }
+
+  lines.push("", `Verdict: ${explanation.verdict}.`);
   return `${lines.join("\n")}\n`;
 }

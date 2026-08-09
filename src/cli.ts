@@ -10,6 +10,7 @@ import { AgentkeysError, UsageError } from "./errors.ts";
 import { isLayer, type Layer } from "./model.ts";
 import { collectAll } from "./parsers.ts";
 import {
+  explainKey,
   filterBindings,
   findAvailable,
   type OutputFormat,
@@ -17,10 +18,11 @@ import {
   renderBindings,
   renderCheatsheet,
   renderDoctor,
+  renderExplain,
 } from "./reports.ts";
 
 const AGENT_TEASER =
-  "Inventory keyboard shortcuts across Karabiner, skhd, and Neovim; detect shadows and find open slots.";
+  "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim; detect shadows and find open slots.";
 
 const AGENT_HELP = `${PROGRAM.description}.
 
@@ -30,25 +32,40 @@ When to use
 - When surveying what is bound: list bindings or render the cheatsheet.
 
 How it resolves
-- Reads live config from $HOME/code/dotfiles for Karabiner (karabiner.json),
-  skhd (skhdrc), and Neovim (init.lua plus lua/plugins). Missing files
-  contribute zero bindings; readable but malformed files fail loudly.
-- Layer priority: karabiner > skhd > nvim. A higher layer shadows the same
-  canonical key in a lower one. Leader and space-scoped Neovim keys are
-  layer-local and never conflict across layers.
+- Reads each layer from the location its own tool documents, under
+  $HOME/.config: karabiner/karabiner.json, skhd/skhdrc, ghostty/config,
+  tmux/tmux.conf plus tmux/conf.d/*.conf, and nvim/init.lua plus
+  nvim/lua/plugins. Ghostty prefers \`ghostty +list-keybinds\` when the binary
+  is installed, because that reports defaults the config file omits. Missing
+  files contribute zero bindings; readable but malformed files fail loudly.
+  Every path is overridable: AGENTKEYS_KARABINER_CONFIG, AGENTKEYS_SKHD_CONFIG,
+  AGENTKEYS_GHOSTTY_CONFIG, AGENTKEYS_GHOSTTY_BIN, AGENTKEYS_TMUX_CONFIG,
+  AGENTKEYS_NVIM_CONFIG.
+- Layer priority is interception order: karabiner > skhd > ghostty > tmux >
+  nvim. A higher layer shadows the same canonical key in a lower one. Keys that
+  are local to a layer never conflict across layers: Neovim leader and space
+  keys, tmux prefix and mode-table keys, Ghostty chord sequences. A binding that
+  forwards the key onward rather than consuming it — skhd \`* ~\`, Ghostty
+  \`text:\` and \`esc:\` — shadows nothing.
+- Well-known shortcuts owned by software with no readable config (macOS,
+  browsers, readline) are reported as advisory reservations, never conflicts.
 
 Workflow
 1. agentkeys doctor
-   Report shadowed and conditionally shadowed shortcuts.
-2. agentkeys find-available --modifier cmd+shift --layer skhd
+   Report which config each layer was read from, then shadowed and
+   conditionally shadowed shortcuts.
+2. agentkeys explain --key cmd+shift+v
+   Everything claiming one chord, across every layer plus reservations.
+3. agentkeys find-available --modifier cmd+shift --layer skhd
    Pick a priority-safe free key before binding anything new.
-3. agentkeys list-bindings --layer skhd --modifier cmd+shift --format table
+4. agentkeys list-bindings --layer skhd --modifier cmd+shift --format table
    Verify the result. Default format is json; yaml and table are available.
-4. agentkeys show-cheatsheet
+5. agentkeys show-cheatsheet
    Markdown overview of every binding, grouped by layer priority.
 
 Contract
-- list-bindings emits stable JSON by default; use it for scripting.
+- list-bindings emits stable JSON by default; use it for scripting, and
+  explain --format json for a single key.
 - Exit codes: 0 success, 2 usage fault, 1 any other failure.
 - agentkeys <command> --help-json prints machine-readable flags per command.`;
 
@@ -224,7 +241,7 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   }
 
   if (command.name === "list-bindings") {
-    const bindings = filterBindings(collectAll(), {
+    const bindings = filterBindings(collectAll().bindings, {
       layer: asLayer(flags.layer),
       modifier: typeof flags.modifier === "string" ? flags.modifier : undefined,
     });
@@ -233,7 +250,7 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   }
 
   if (command.name === "show-cheatsheet") {
-    const allBindings = collectAll();
+    const allBindings = collectAll().bindings;
     const filtered = filterBindings(allBindings, {
       layer: asLayer(flags.layer),
     });
@@ -242,7 +259,8 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   }
 
   if (command.name === "doctor") {
-    writeStdout(renderDoctor(collectAll()));
+    const inventory = collectAll();
+    writeStdout(renderDoctor(inventory.bindings, inventory.sources));
     return 0;
   }
 
@@ -252,7 +270,22 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
       throw new UsageError("find-available requires --modifier and --layer");
     }
     writeStdout(
-      renderAvailable(findAvailable(collectAll(), flags.modifier, layer)),
+      renderAvailable(
+        findAvailable(collectAll().bindings, flags.modifier, layer),
+      ),
+    );
+    return 0;
+  }
+
+  if (command.name === "explain") {
+    if (typeof flags.key !== "string") {
+      throw new UsageError("explain requires --key");
+    }
+    const explanation = explainKey(collectAll().bindings, flags.key);
+    writeStdout(
+      flags.format === "json"
+        ? `${JSON.stringify(explanation, null, 2)}\n`
+        : renderExplain(explanation),
     );
     return 0;
   }
@@ -260,7 +293,7 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   throw new UsageError(`Unknown command: ${command.name}`);
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<number> {
+export function main(argv = process.argv.slice(2)): number {
   try {
     const top = parseTop(argv);
     if (top.command === undefined) return 0;
@@ -280,5 +313,5 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 }
 
 if (import.meta.main) {
-  process.exit(await main());
+  process.exit(main());
 }

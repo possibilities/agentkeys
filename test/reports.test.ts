@@ -7,12 +7,14 @@ import { parseSkhd } from "../src/parsers.ts";
 import {
   ALL_KEYS,
   detectConflicts,
+  explainKey,
   filterBindings,
   findAvailable,
   renderAvailable,
   renderBindings,
   renderCheatsheet,
   renderDoctor,
+  renderExplain,
 } from "../src/reports.ts";
 import { writeFixture } from "./helpers.ts";
 
@@ -80,7 +82,7 @@ test("conflicts honor priority, conditional shadows, and layer-scoped exclusion"
     ["alt+x", "conditional shadow"],
     ["cmd+h", "shadow"],
   ]);
-  expect(renderDoctor(bindings)).toContain("## Conditional shadows (1)");
+  expect(renderDoctor(bindings, [])).toContain("## Conditional shadows (1)");
   expect(renderCheatsheet(bindings, bindings)).toContain("(shadowed)");
 });
 
@@ -114,10 +116,56 @@ test("doctor aggregates contextual higher-layer records and ignores passthrough"
       higherContexts: ["Terminal only", "Browser only"],
     },
   ]);
-  const report = renderDoctor(bindings);
+  const report = renderDoctor(bindings, [
+    { layer: "skhd", source: "skhdrc", found: true, bindings: skhd.length },
+    { layer: "tmux", source: "tmux.conf", found: false, bindings: 0 },
+  ]);
   expect(report).toContain("Terminal only; Browser only");
-  expect(report).not.toContain("default");
   expect(report).not.toContain("passthrough");
+  expect(report).toContain("| tmux | tmux.conf (not found) | — |");
+});
+
+test("doctor reports its sources even when nothing conflicts", () => {
+  const report = renderDoctor(
+    [new Binding({ layer: "skhd", key: "cmd+a", action: "act" })],
+    [{ layer: "skhd", source: "skhdrc", found: true, bindings: 1 }],
+  );
+  expect(report).toContain("## Sources");
+  expect(report).toContain("| skhd | skhdrc | 1 |");
+  expect(report).toContain("No cross-layer conflicts detected.");
+});
+
+test("explain ranks every layer on a key and names well-known owners", () => {
+  const bindings = [
+    new Binding({ layer: "skhd", key: "ctrl+l", action: "focus address bar" }),
+    new Binding({ layer: "tmux", key: "ctrl+l", action: "clear" }),
+    new Binding({
+      layer: "nvim",
+      key: "ctrl+l",
+      action: "copilot accept",
+      mode: "i",
+    }),
+  ];
+
+  const explanation = explainKey(bindings, "control + L");
+  expect(explanation.key).toBe("ctrl+l");
+  expect(
+    explanation.owners.map((owner) => [owner.layer, owner.verdict]),
+  ).toEqual([
+    ["skhd", "wins"],
+    ["tmux", "shadowed"],
+    ["nvim", "shadowed"],
+  ]);
+  expect(explanation.verdict).toBe("taken by skhd");
+  expect(explanation.reserved[0]?.owner).toBe("shell (readline)");
+  expect(renderExplain(explanation)).toContain("Verdict: taken by skhd.");
+
+  const free = explainKey(bindings, "alt+g");
+  expect(free.verdict).toBe("free");
+  expect(renderExplain(free)).toContain("No binding in any layer.");
+
+  const reservedOnly = explainKey(bindings, "cmd+shift+4");
+  expect(reservedOnly.verdict).toBe("free in your config, but macOS uses it");
 });
 
 test("availability uses the 69-key universe and priority blocking semantics", () => {
@@ -142,6 +190,23 @@ test("availability uses the 69-key universe and priority blocking semantics", ()
   expect(availableText).toContain("  Digits:   ");
   expect(availableText).toContain("  Punct:    ");
   expect(availableText).toContain("  Special:  ");
+});
+
+test("availability names free slots that well-known software already uses", () => {
+  const result = findAvailable([], "cmd+shift", "skhd");
+  expect(result.reserved.map((reservation) => reservation.key)).toEqual([
+    "cmd+shift+n",
+    "cmd+shift+t",
+    "cmd+shift+z",
+    "cmd+shift+3",
+    "cmd+shift+4",
+    "cmd+shift+5",
+    "cmd+shift+/",
+    "cmd+shift+tab",
+  ]);
+  const text = renderAvailable(result);
+  expect(text).toContain("Free here, but well known elsewhere:");
+  expect(text).toContain("macOS: Screenshot a selection");
 });
 
 test("renders json, yaml, table, and empty binding output", () => {

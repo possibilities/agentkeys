@@ -1,4 +1,7 @@
-export const LAYERS = ["karabiner", "skhd", "nvim"] as const;
+// Interception order: a keystroke reaches Karabiner's virtual HID driver first,
+// then the skhd hotkey daemon, then the terminal app, then tmux inside it, then
+// the editor inside that. Whatever a higher layer claims never arrives below.
+export const LAYERS = ["karabiner", "skhd", "ghostty", "tmux", "nvim"] as const;
 export type Layer = (typeof LAYERS)[number];
 
 export interface BindingInit {
@@ -7,6 +10,8 @@ export interface BindingInit {
   action: string;
   mode?: string;
   context?: string;
+  passthrough?: boolean;
+  scoped?: boolean;
   sourceFile?: string;
   sourceLine?: number;
 }
@@ -17,8 +22,11 @@ export interface BindingRecord {
   action: string;
   mode?: string;
   context?: string;
+  passthrough?: boolean;
   source?: string;
 }
+
+const SCOPE_PREFIXES = ["prefix+", "space+", "leader+"];
 
 export class Binding {
   readonly layer: Layer;
@@ -26,8 +34,10 @@ export class Binding {
   readonly action: string;
   readonly mode: string;
   readonly context: string;
+  readonly passthrough: boolean;
   readonly sourceFile: string;
   readonly sourceLine: number;
+  private readonly scoped: boolean;
 
   constructor(init: BindingInit) {
     this.layer = init.layer;
@@ -35,6 +45,8 @@ export class Binding {
     this.action = init.action;
     this.mode = init.mode ?? "";
     this.context = init.context ?? "";
+    this.passthrough = init.passthrough ?? false;
+    this.scoped = init.scoped ?? false;
     this.sourceFile = init.sourceFile ?? "";
     this.sourceLine = init.sourceLine ?? 0;
   }
@@ -47,6 +59,7 @@ export class Binding {
     };
     if (this.mode !== "") record.mode = this.mode;
     if (this.context !== "") record.context = this.context;
+    if (this.passthrough) record.passthrough = true;
     if (this.sourceFile !== "") {
       record.source = this.sourceLine
         ? `${this.sourceFile}:${this.sourceLine}`
@@ -66,12 +79,21 @@ export class Binding {
     return parts[parts.length - 1] ?? "";
   }
 
+  // A key only a layer's own users can press — behind that layer's prefix, or
+  // live only in one of its modes — so it cannot collide across layers. Some
+  // parsers know this outright; the rest declare it by naming the prefix.
   get isLayerScoped(): boolean {
     return (
-      this.key.startsWith("prefix+") ||
-      this.key.startsWith("space+") ||
-      this.key.startsWith("leader+")
+      this.scoped ||
+      SCOPE_PREFIXES.some((prefix) => this.key.startsWith(prefix))
     );
+  }
+
+  // Only a binding that consumes the key hides one below it. A layer that
+  // forwards the keystroke onward — skhd's `* ~`, Ghostty's `text:` — is
+  // transparent to everything downstream.
+  get isInterception(): boolean {
+    return !this.passthrough;
   }
 }
 

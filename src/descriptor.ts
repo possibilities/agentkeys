@@ -1,3 +1,5 @@
+import { LAYERS } from "./model.ts";
+
 export type FlagType = "boolean" | "string";
 
 export interface FlagDescriptor {
@@ -19,11 +21,13 @@ const HELP_FLAGS = [
   { name: "help-json", type: "boolean", summary: "Show machine-readable help" },
 ] as const satisfies readonly FlagDescriptor[];
 
+const LAYER_LIST = LAYERS.join("|");
+
 const LAYER_FLAG = {
   name: "layer",
   type: "string",
-  summary: "Filter to a binding layer: karabiner|skhd|nvim",
-  allowed: ["karabiner", "skhd", "nvim"],
+  summary: `Filter to a binding layer: ${LAYER_LIST}`,
+  allowed: LAYERS,
 } as const satisfies FlagDescriptor;
 
 export const TOP_LEVEL_FLAGS = [
@@ -83,8 +87,27 @@ export const COMMANDS = [
       },
       {
         ...LAYER_FLAG,
-        summary: "Required target layer: karabiner|skhd|nvim",
+        summary: `Required target layer: ${LAYER_LIST}`,
         required: true,
+      },
+    ],
+  },
+  {
+    name: "explain",
+    summary: "Show every layer and well-known app claiming one key",
+    flags: [
+      ...HELP_FLAGS,
+      {
+        name: "key",
+        type: "string",
+        summary: "Required key or chord to explain, such as cmd+shift+v",
+        required: true,
+      },
+      {
+        name: "format",
+        type: "string",
+        summary: "Output format: text|json (default text)",
+        allowed: ["text", "json"],
       },
     ],
   },
@@ -93,5 +116,5 @@ export const COMMANDS = [
 export const PROGRAM = {
   name: "agentkeys",
   description:
-    "Inventory keyboard shortcuts across Karabiner, skhd, and Neovim",
+    "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim",
 } as const;

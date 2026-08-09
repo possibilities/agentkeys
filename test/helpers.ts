@@ -24,7 +24,7 @@ export function writeDefaultConfigs(root: string): {
 } {
   const karabiner = writeFixture(
     root,
-    "code/dotfiles/karabiner/.config/karabiner/karabiner.json",
+    ".config/karabiner/karabiner.json",
     JSON.stringify({
       profiles: [
         {
@@ -63,18 +63,15 @@ export function writeDefaultConfigs(root: string): {
   );
   const skhd = writeFixture(
     root,
-    "code/dotfiles/skhd/.config/skhd/skhdrc",
+    ".config/skhd/skhdrc",
     "cmd + shift - h : skhd focus west\nalt - x : echo one \\\n  && echo two\n",
   );
   const nvimInit = writeFixture(
     root,
-    "code/dotfiles/nvim/.config/nvim/init.lua",
+    ".config/nvim/init.lua",
     "vim.keymap.set('n', '<Leader>h', ':help<CR>', { desc = 'Help' })\nvim.keymap.set('n', '<D-S-h>', ':cmd<CR>')\n",
   );
-  const nvimPlugins = fixturePath(
-    root,
-    "code/dotfiles/nvim/.config/nvim/lua/plugins",
-  );
+  const nvimPlugins = fixturePath(root, ".config/nvim/lua/plugins");
   return { karabiner, skhd, nvimInit, nvimPlugins };
 }
 
@@ -86,7 +83,9 @@ export async function runCli(
     ["bun", fixturePath(import.meta.dir, "../src/cli.ts"), ...args],
     {
       cwd: "/tmp",
-      env: { ...process.env, ...env },
+      // An empty binary path keeps the Ghostty probe from reaching the real
+      // installed app, so a fixture HOME describes the whole inventory.
+      env: { AGENTKEYS_GHOSTTY_BIN: "", ...process.env, ...env },
       stdout: "pipe",
       stderr: "pipe",
     },

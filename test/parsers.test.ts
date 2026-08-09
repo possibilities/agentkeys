@@ -4,9 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   collectAll,
+  defaultPaths,
+  parseGhostty,
   parseKarabiner,
   parseNvim,
   parseSkhd,
+  parseTmux,
+  tmuxFiles,
 } from "../src/parsers.ts";
 import { writeFixture } from "./helpers.ts";
 
@@ -120,8 +124,23 @@ test("skhd parser handles continuation lines and app-conditional blocks", () => 
       key: "ctrl+l",
       action: "passthrough",
       context: "default",
+      passthrough: true,
       source: `${path}:7`,
     },
+  ]);
+});
+
+test("skhd parser binds keys named without a modifier", () => {
+  const path = writeFixture(
+    tempRoot(),
+    "skhdrc",
+    ["f13 : yabai -m space --focus 1", "0x5A : yabai -m space --focus 8"].join(
+      "\n",
+    ),
+  );
+  expect(parseSkhd(path).map((binding) => binding.key)).toEqual([
+    "f13",
+    "0x5a",
   ]);
 });
 
@@ -219,14 +238,120 @@ test("Neovim parser reports collected keymap candidates that cannot be parsed", 
   );
 });
 
-test("collectAll accepts injected paths and treats missing files as empty", () => {
+test("tmux parser separates root, prefix, and mode tables and follows unbind", () => {
+  const root = tempRoot();
+  const conf = writeFixture(
+    root,
+    "tmux.conf",
+    [
+      "# comment",
+      "set -g mouse on",
+      "unbind C-b",
+      "set -g prefix C-Space",
+      "bind C-Space send-prefix",
+      "bind -n M-h select-pane -LZ",
+      "bind -n M-S-H resize-pane -L 5",
+      "bind -r Left select-pane -LZ",
+      "bind -T copy-mode-vi v send-keys -X begin-selection",
+      "bind -n M-'\\' split-window -h",
+      "bind -n MouseDown1StatusLeft choose-session",
+      "unbind %",
+      "bind | split-window -h",
+      "unbind -n M-h",
+    ].join("\n"),
+  );
+
+  expect(
+    parseTmux([conf]).map((binding) => [
+      binding.key,
+      binding.mode,
+      binding.isLayerScoped,
+    ]),
+  ).toEqual([
+    ["ctrl+space", "", false],
+    ["prefix+ctrl+space", "", true],
+    ["alt+shift+h", "", false],
+    ["prefix+left", "", true],
+    ["v", "copy-mode-vi", true],
+    ["alt+\\", "", false],
+    ["prefix+|", "", true],
+  ]);
+});
+
+test("tmux file discovery follows literal source-file and conf.d fragments", () => {
+  const root = tempRoot();
+  writeFixture(root, "tmux/tmux.conf", "source-file ../extra.conf\n");
+  writeFixture(root, "extra.conf", "bind -n M-a display 'a'\n");
+  writeFixture(root, "tmux/conf.d/10-nav.conf", "bind -n M-b display 'b'\n");
+  writeFixture(root, "tmux/conf.d/notes.txt", "bind -n M-c display 'c'\n");
+
+  const paths = {
+    ...defaultPaths(root),
+    tmuxConf: join(root, "tmux", "tmux.conf"),
+    tmuxConfD: join(root, "tmux", "conf.d"),
+  };
+  expect(parseTmux(tmuxFiles(paths)).map((binding) => binding.key)).toEqual([
+    "alt+a",
+    "alt+b",
+  ]);
+});
+
+test("Ghostty parser reads triggers, passthrough actions, and unbind", () => {
+  const bindings = parseGhostty(
+    [
+      "font-size = 20",
+      "keybind = super+shift+,=reload_config",
+      "keybind = super+==increase_font_size:1",
+      "keybind = performable:ctrl+shift+c=copy_to_clipboard",
+      "keybind = shift+enter=text:\\x1b[13;2u",
+      "keybind = alt+arrow_left=esc:b",
+      "keybind = ctrl+a>n=new_window",
+      "keybind = super+q=unbind",
+      "keybind = super+q=quit",
+    ].join("\n"),
+    "config",
+  );
+
+  expect(
+    bindings.map((binding) => [
+      binding.key,
+      binding.passthrough,
+      binding.isLayerScoped,
+    ]),
+  ).toEqual([
+    ["cmd+shift+,", false, false],
+    ["cmd+=", false, false],
+    ["ctrl+shift+c", false, false],
+    ["shift+return", true, false],
+    ["alt+left", true, false],
+    ["ctrl+a>n", false, true],
+    ["cmd+q", false, false],
+  ]);
+});
+
+test("collectAll accepts injected paths, reports sources, and treats missing files as empty", () => {
   const root = tempRoot();
   const skhd = writeFixture(root, "skhdrc", "cmd - a : echo a\n");
-  const bindings = collectAll({
+  const inventory = collectAll({
+    ...defaultPaths(root),
     karabiner: join(root, "missing.json"),
     skhd,
+    ghosttyBin: "",
+    ghosttyConfig: join(root, "missing-ghostty"),
+    tmuxConf: join(root, "missing.conf"),
+    tmuxConfD: join(root, "missing-conf.d"),
     nvimInit: join(root, "missing.lua"),
     nvimPlugins: join(root, "missing-plugins"),
   });
-  expect(bindings.map((binding) => binding.key)).toEqual(["cmd+a"]);
+
+  expect(inventory.bindings.map((binding) => binding.key)).toEqual(["cmd+a"]);
+  expect(
+    inventory.sources.map((source) => [source.layer, source.found]),
+  ).toEqual([
+    ["karabiner", false],
+    ["skhd", true],
+    ["ghostty", false],
+    ["tmux", false],
+    ["nvim", false],
+  ]);
 });

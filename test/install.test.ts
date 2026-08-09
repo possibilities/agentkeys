@@ -1,6 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   linkSync,
   lstatSync,
@@ -48,14 +49,17 @@ function layout(): InstallLayout {
   };
 }
 
-async function runInstall(
+async function runInstallScript(
+  installScript: string,
   installLayout: Pick<InstallLayout, "binDir" | "stateDir">,
+  env: Record<string, string>,
   ...args: string[]
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["bash", script, ...args], {
+  const proc = Bun.spawn(["bash", installScript, ...args], {
     cwd: "/tmp",
     env: {
       ...process.env,
+      ...env,
       AGENTKEYS_INSTALL_BIN_DIR: installLayout.binDir,
       AGENTKEYS_INSTALL_STATE_DIR: installLayout.stateDir,
     },
@@ -68,6 +72,13 @@ async function runInstall(
     proc.exited,
   ]);
   return { exitCode, stdout, stderr };
+}
+
+async function runInstall(
+  installLayout: Pick<InstallLayout, "binDir" | "stateDir">,
+  ...args: string[]
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  return runInstallScript(script, installLayout, {}, ...args);
 }
 
 function git(...args: string[]): string {
@@ -190,6 +201,65 @@ test("installer refuses a previous checkout with a foreign origin", async () => 
   symlinkSync(previous.cli, installLayout.target);
 
   const result = await runInstall(installLayout, "--install");
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("foreign origin");
+});
+
+const FORK_ORIGIN = "https://github.com/someone-else/agentkeys.git";
+
+// A working checkout of a fork: its own installer copy plus the manifest and
+// lockfile the installer's frozen `bun install` needs.
+function forkCheckout() {
+  const checkout = mkdtempSync(join(tmpdir(), "agentkeys-fork-"));
+  mkdirSync(join(checkout, "src"));
+  mkdirSync(join(checkout, "scripts"));
+  const cli = join(checkout, "src", "cli.ts");
+  writeFileSync(cli, "#!/usr/bin/env bun\n");
+  chmodSync(cli, 0o755);
+  const installScript = join(checkout, "scripts", "install.sh");
+  copyFileSync(script, installScript);
+  copyFileSync(join(root, "package.json"), join(checkout, "package.json"));
+  copyFileSync(join(root, "bun.lock"), join(checkout, "bun.lock"));
+  git("-C", checkout, "init", "-q");
+  git("-C", checkout, "config", "user.name", "Agentkeys Test");
+  git("-C", checkout, "config", "user.email", "agentkeys@example.invalid");
+  git("-C", checkout, "remote", "add", "origin", FORK_ORIGIN);
+  git("-C", checkout, "add", "-A");
+  git("-C", checkout, "commit", "-qm", "fork checkout");
+  return { checkout, cli, installScript };
+}
+
+test("a fork installs from its own checkout with the expected-origin override", async () => {
+  const installLayout = layout();
+  const fork = forkCheckout();
+
+  const refused = await runInstallScript(
+    fork.installScript,
+    installLayout,
+    {},
+    "--install",
+  );
+  expect(refused.exitCode).toBe(1);
+  expect(refused.stderr).toContain("foreign origin");
+
+  const result = await runInstallScript(
+    fork.installScript,
+    installLayout,
+    { AGENTKEYS_INSTALL_EXPECTED_ORIGIN: FORK_ORIGIN },
+    "--install",
+  );
+  expect(result.exitCode).toBe(0);
+  expect(readlinkSync(installLayout.target)).toBe(realpathSync(fork.cli));
+});
+
+test("the override cannot make an upstream checkout pass as a fork", async () => {
+  const installLayout = layout();
+  const result = await runInstallScript(
+    script,
+    installLayout,
+    { AGENTKEYS_INSTALL_EXPECTED_ORIGIN: FORK_ORIGIN },
+    "--install",
+  );
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain("foreign origin");
 });

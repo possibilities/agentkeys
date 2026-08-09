@@ -4,7 +4,7 @@ Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim; 
 
 ## Install
 
-Requires Bun 1.3.14.
+Requires Bun ≥ 1.3.14.
 
 ```bash
 ./scripts/install.sh

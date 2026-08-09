@@ -1,6 +1,14 @@
 import { stringify } from "yaml";
 import { success } from "./envelope.ts";
-import { type Binding, bindingsToRecords, LAYERS, type Layer, priorityIndex } from "./model.ts";
+import {
+  type Binding,
+  bindingsToRecords,
+  interceptorsOf,
+  intercepts,
+  LAYERS,
+  type Layer,
+  priorityIndex,
+} from "./model.ts";
 import { buildKey, normalizeBaseKey, normalizeModifierCombo } from "./normalize.ts";
 import type { LayerSource } from "./parsers.ts";
 import { type Reservation, reservationsFor } from "./reserved.ts";
@@ -131,6 +139,9 @@ export function detectConflicts(bindings: readonly Binding[]): Conflict[] {
       for (let lowerIndex = higherIndex + 1; lowerIndex < byLayer.length; lowerIndex += 1) {
         const lower = byLayer[lowerIndex];
         if (!lower) continue;
+        // Sibling layers share no hosting path, so the same key in both is
+        // two apps' own shortcut, not a conflict.
+        if (!intercepts(higher.layer, lower.layer)) continue;
         const unconditional = higher.bindings.filter((binding) => binding.context === "");
         const relevantHigher = unconditional.length > 0 ? unconditional : higher.bindings;
         conflicts.push({
@@ -243,8 +254,8 @@ export function renderCheatsheet(
       const layers = [...(keyLayers.get(binding.key) ?? new Set<Layer>())];
       let conflict = "";
       if (layers.length > 1 && !binding.isLayerScoped && binding.isInterception) {
-        const highest = layers.sort((left, right) => priorityIndex(left) - priorityIndex(right))[0];
-        conflict = binding.layer === highest ? "**\\***" : "(shadowed)";
+        if (layers.some((other) => intercepts(other, binding.layer))) conflict = "(shadowed)";
+        else if (layers.some((other) => intercepts(binding.layer, other))) conflict = "**\\***";
       }
       const notes = [binding.context, binding.mode ? `[${binding.mode}]` : "", conflict]
         .filter((part) => part !== "")
@@ -270,7 +281,9 @@ export function findAvailable(
   layer: Layer,
 ): AvailabilityResult {
   const modifier = normalizeModifierCombo(modifierInput);
-  const blockingLayers = new Set(LAYERS.slice(0, priorityIndex(layer) + 1));
+  // Only the layers that can actually intercept ahead of this one block a
+  // slot; a sibling's bindings never reach it.
+  const blockingLayers = new Set([...interceptorsOf(layer), layer]);
   const used = new Set<string>();
   for (const binding of bindings) {
     if (!blockingLayers.has(binding.layer)) continue;
@@ -347,14 +360,16 @@ export function explainKey(bindings: readonly Binding[], keyInput: string): KeyE
   const matches = [...bindings.filter((binding) => binding.key === key)].sort(
     (left, right) => priorityIndex(left.layer) - priorityIndex(right.layer),
   );
-  let winnerFound = false;
+  // Winners are tracked per hosting path: an unconditional claim shadows only
+  // the layers it hosts, so sibling branches can each produce a winner.
+  const winners = new Set<Layer>();
   const owners: KeyOwner[] = matches.map((binding) => {
     let verdict: KeyOwner["verdict"];
     if (binding.isLayerScoped) verdict = "scoped";
     else if (!binding.isInterception) verdict = "transparent";
-    else if (winnerFound) verdict = "shadowed";
+    else if ([...winners].some((winner) => intercepts(winner, binding.layer))) verdict = "shadowed";
     else if (binding.context === "") {
-      winnerFound = true;
+      winners.add(binding.layer);
       verdict = "wins";
     } else {
       // A conditional binding claims the key only inside its context, so the

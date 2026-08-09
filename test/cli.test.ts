@@ -24,8 +24,8 @@ test("top-level and leaf help are descriptor-backed", async () => {
   expect(leaf.stdout).toContain("--layer");
 });
 
-const LAYER_CHOICES = ["karabiner", "skhd", "ghostty", "tmux", "nvim"];
-const LAYER_SUMMARY = "Filter to a binding layer: karabiner|skhd|ghostty|tmux|nvim";
+const LAYER_CHOICES = ["karabiner", "skhd", "ghostty", "orca", "tmux", "herdr", "nvim"];
+const LAYER_SUMMARY = "Filter to a binding layer: karabiner|skhd|ghostty|orca|tmux|herdr|nvim";
 
 test("leaf help-json projects stable public discovery schema", async () => {
   const expected = {

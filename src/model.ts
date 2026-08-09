@@ -1,8 +1,52 @@
-// Interception order: a keystroke reaches Karabiner's virtual HID driver first,
-// then the skhd hotkey daemon, then the terminal app, then tmux inside it, then
-// the editor inside that. Whatever a higher layer claims never arrives below.
-export const LAYERS = ["karabiner", "skhd", "ghostty", "tmux", "nvim"] as const;
+// Interception order: a keystroke reaches Karabiner's virtual HID driver
+// first, then the skhd hotkey daemon, then whichever app holds focus, then
+// whatever that app hosts. The array is a topological order over the hosting
+// paths below; priority questions go through intercepts(), because array
+// position alone cannot say that ghostty and orca never see the same
+// keystroke.
+export const LAYERS = ["karabiner", "skhd", "ghostty", "orca", "tmux", "herdr", "nvim"] as const;
 export type Layer = (typeof LAYERS)[number];
+
+// Who hands keystrokes to whom: tmux and herdr run inside Ghostty, never
+// inside each other; Neovim runs bare in either terminal app or inside tmux
+// or herdr. A layer's bindings can only steal from layers it transitively
+// hosts — sibling layers (ghostty|orca, tmux|herdr) share no hosting path,
+// so neither can shadow the other.
+const HOSTS: Record<Layer, readonly Layer[]> = {
+  karabiner: [],
+  skhd: ["karabiner"],
+  ghostty: ["skhd"],
+  orca: ["skhd"],
+  tmux: ["ghostty"],
+  herdr: ["ghostty"],
+  nvim: ["ghostty", "orca", "tmux", "herdr"],
+};
+
+const ANCESTORS: ReadonlyMap<Layer, ReadonlySet<Layer>> = (() => {
+  const map = new Map<Layer, Set<Layer>>();
+  const resolve = (layer: Layer): Set<Layer> => {
+    const cached = map.get(layer);
+    if (cached) return cached;
+    const ancestors = new Set<Layer>();
+    map.set(layer, ancestors);
+    for (const host of HOSTS[layer]) {
+      ancestors.add(host);
+      for (const above of resolve(host)) ancestors.add(above);
+    }
+    return ancestors;
+  };
+  for (const layer of LAYERS) resolve(layer);
+  return map;
+})();
+
+// Whether a binding at `higher` can take the keystroke before `lower` sees it.
+export function intercepts(higher: Layer, lower: Layer): boolean {
+  return ANCESTORS.get(lower)?.has(higher) ?? false;
+}
+
+export function interceptorsOf(layer: Layer): Layer[] {
+  return LAYERS.filter((candidate) => intercepts(candidate, layer));
+}
 
 export interface BindingInit {
   layer: Layer;

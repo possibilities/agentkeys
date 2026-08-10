@@ -1,7 +1,4 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterAll, expect, test } from "bun:test";
 import { Binding } from "../src/model.ts";
 import { parseSkhd } from "../src/parsers.ts";
 import {
@@ -16,10 +13,12 @@ import {
   renderDoctor,
   renderExplain,
 } from "../src/reports.ts";
-import { writeFixture } from "./helpers.ts";
+import { makeTempDir, removeTempDirs, writeFixture } from "./helpers.ts";
+
+afterAll(removeTempDirs);
 
 function tempRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agentkeys-report-"));
+  return makeTempDir("agentkeys-report-");
 }
 
 test("binding records omit optional fields when empty and keep source line shape", () => {

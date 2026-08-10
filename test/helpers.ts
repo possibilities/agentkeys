@@ -1,5 +1,29 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
+const temporaryRoots: string[] = [];
+
+// Every suite builds a fixture tree per case, and nothing reclaimed them: a
+// thousand directories had accumulated in TMPDIR. The install suite's fork
+// checkouts are the expensive ones, since each runs a frozen `bun install`
+// and leaves ~85M behind. Using the helper is what earns cleanup, so a new
+// suite gets it without remembering to write its own teardown.
+export function makeTempDir(prefix: string): string {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  temporaryRoots.push(directory);
+  return directory;
+}
+
+// Each suite registers this itself. This module is evaluated once and shared,
+// so an afterAll in here would bind to whichever suite imported it first and
+// abandon every later suite's directories; Bun's runner does not emit a
+// process "exit" event to fall back on either.
+export function removeTempDirs(): void {
+  for (const directory of temporaryRoots.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
 
 export function fixturePath(root: string, relative: string): string {
   return join(root, relative);

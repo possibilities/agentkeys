@@ -1,4 +1,4 @@
-import { expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
   copyFileSync,
@@ -6,7 +6,6 @@ import {
   linkSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -14,8 +13,10 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeTempDir, removeTempDirs } from "./helpers.ts";
+
+afterAll(removeTempDirs);
 
 const root = realpathSync(join(import.meta.dir, ".."));
 const script = join(root, "scripts", "install.sh");
@@ -35,7 +36,7 @@ type InstallLayout = {
 };
 
 function layout(): InstallLayout {
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "agentkeys-install-"));
+  const temporaryRoot = makeTempDir("agentkeys-install-");
   const binDir = join(temporaryRoot, "bin");
   const stateDir = join(temporaryRoot, "state");
   mkdirSync(binDir);
@@ -90,7 +91,7 @@ function git(...args: string[]): string {
 }
 
 function previousCheckout(origin = "https://github.com/possibilities/agentkeys.git") {
-  const checkout = mkdtempSync(join(tmpdir(), "agentkeys-previous-"));
+  const checkout = makeTempDir("agentkeys-previous-");
   mkdirSync(join(checkout, "src"));
   const cli = join(checkout, "src", "cli.ts");
   writeFileSync(cli, "#!/usr/bin/env bun\n");
@@ -204,7 +205,7 @@ const FORK_ORIGIN = "https://github.com/someone-else/agentkeys.git";
 // A working checkout of a fork: its own installer copy plus the manifest and
 // lockfile the installer's frozen `bun install` needs.
 function forkCheckout() {
-  const checkout = mkdtempSync(join(tmpdir(), "agentkeys-fork-"));
+  const checkout = makeTempDir("agentkeys-fork-");
   mkdirSync(join(checkout, "src"));
   mkdirSync(join(checkout, "scripts"));
   const cli = join(checkout, "src", "cli.ts");

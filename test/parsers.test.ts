@@ -1,6 +1,4 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   collectAll,
@@ -14,10 +12,12 @@ import {
   parseTmux,
   tmuxFiles,
 } from "../src/parsers.ts";
-import { writeFixture } from "./helpers.ts";
+import { makeTempDir, removeTempDirs, writeFixture } from "./helpers.ts";
+
+afterAll(removeTempDirs);
 
 function tempRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agentkeys-parser-"));
+  return makeTempDir("agentkeys-parser-");
 }
 
 test("Karabiner parser handles conditions, actions, optional modifiers, and skips modifier-only remaps", () => {

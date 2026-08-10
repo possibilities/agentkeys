@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/possibilities/agentkeys/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentkeys/actions/workflows/ci.yml)
 
-Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, Orca, tmux, herdr, and Neovim; detect cross-layer shadows and find free key slots.
+See every keyboard shortcut on this machine at once — Karabiner, skhd, Ghostty, Orca, tmux, herdr, and Neovim. Find what shadows what, and find a chord that is still free.
 
 ## Install
 
@@ -52,9 +52,11 @@ Each layer is read from the location its own tool documents, so a plain machine 
 | herdr | vendored defaults overlaid by `~/.config/herdr/config.toml` (`XDG_CONFIG_HOME` honored), when the app is installed |
 | nvim | `~/.config/nvim/init.lua` and `~/.config/nvim/lua/plugins/*.lua` |
 
-Ghostty prefers the binary because the config file holds only what you overrode — the app ships around ninety-five more. Orca and herdr have no dump command at all, so their defaults are vendored from the upstream sources, version-stamped, and joined only when the app is present. Override any path with `AGENTKEYS_KARABINER_CONFIG`, `AGENTKEYS_SKHD_CONFIG`, `AGENTKEYS_GHOSTTY_CONFIG`, `AGENTKEYS_GHOSTTY_BIN` (empty disables the probe), `AGENTKEYS_ORCA_CONFIG`, `AGENTKEYS_ORCA_BIN`, `AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty treats the app as absent), `AGENTKEYS_TMUX_CONFIG`, or `AGENTKEYS_NVIM_CONFIG`.
+Ghostty prefers the binary, because its config file holds only what you overrode — the app ships around ninety-five more bindings. Orca and herdr have no dump command at all, so their defaults are vendored from the upstream sources, version-stamped, and joined only when the app is present.
 
-Priority follows the hosting paths on a machine where tmux and herdr run inside Ghostty and Neovim runs inside any of the four apps: Ghostty and Orca never see the same keystroke, and neither do tmux and herdr, so same keys across those siblings are never conflicts.
+Every path is overridable: `AGENTKEYS_KARABINER_CONFIG`, `AGENTKEYS_SKHD_CONFIG`, `AGENTKEYS_GHOSTTY_CONFIG`, `AGENTKEYS_GHOSTTY_BIN` (empty disables the probe), `AGENTKEYS_ORCA_CONFIG`, `AGENTKEYS_ORCA_BIN`, `AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty treats the app as absent), `AGENTKEYS_TMUX_CONFIG`, and `AGENTKEYS_NVIM_CONFIG`.
+
+Priority follows the hosting paths: tmux and herdr run inside Ghostty, and Neovim runs inside any of the four apps. Ghostty and Orca never see the same keystroke, and neither do tmux and herdr, so the same key in two sibling layers is never a conflict.
 
 `agentkeys doctor` names every file it read, so a layer whose config is missing never reads as a layer with nothing to report.
 

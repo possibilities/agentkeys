@@ -1,11 +1,16 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { runCli, writeDefaultConfigs, writeFixture } from "./helpers.ts";
+import { afterAll, expect, test } from "bun:test";
+import {
+  makeTempDir,
+  removeTempDirs,
+  runCli,
+  writeDefaultConfigs,
+  writeFixture,
+} from "./helpers.ts";
+
+afterAll(removeTempDirs);
 
 function tempHome(): string {
-  return mkdtempSync(join(tmpdir(), "agentkeys-cli-"));
+  return makeTempDir("agentkeys-cli-");
 }
 
 test("top-level and leaf help are descriptor-backed", async () => {

@@ -1,5 +1,7 @@
 # agentkeys
 
+[![CI](https://github.com/possibilities/agentkeys/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentkeys/actions/workflows/ci.yml)
+
 Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, Orca, tmux, herdr, and Neovim; detect cross-layer shadows and find free key slots.
 
 ## Install

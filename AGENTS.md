@@ -46,7 +46,7 @@ than editing an old one.
 ## The skill
 
 `skills/keys/SKILL.md` is the canonical runbook and the surface most agent
-sessions see: Funk's skills scanner installs it globally with `npx skills add`
+sessions see: AgentStart's skills scan installs it globally with `npx skills add`
 against this checkout, discovering it by the nested `skills/<name>/SKILL.md`
 layout. `--agent-help` is the in-binary fallback and points at the same
 workflow.
@@ -74,7 +74,7 @@ This checkout is one of the agent* fleet under `~/code`. Shared machinery
 lives in two siblings, and some changes here must cascade:
 
 - Skills under `skills/<name>/` ship globally through AgentStart's scan
-  (`~/code/agentstart/scripts/sync-skills`, run six-hourly by Funk's
+  (`~/code/agentstart/scripts/sync-skills`, run six-hourly by the scheduled
   updater): a SKILL.md edit is live within six hours, or on demand by
   running that script. Whether a new skill earns a TOOLS.md advertisement
   line is a deliberate decision — `agentwiki get tool-advertisement-policy`.

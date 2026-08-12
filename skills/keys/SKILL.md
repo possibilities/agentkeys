@@ -1,6 +1,6 @@
 ---
 name: keys
-description: Choose and audit keyboard shortcuts with the agentkeys CLI — the full interception chain across Karabiner, skhd, Ghostty, Orca, tmux, herdr, and Neovim, plus the shortcuts common apps already own. Use when someone asks what to bind a command to, whether a chord is free, why a shortcut stopped working or fires the wrong thing, which key a layer is stealing, or wants a map of what is currently bound. Also use before adding any keybinding to a config file — a mnemonic-first guess is how conflicts get made.
+description: Choose and audit keyboard shortcuts with the agentkeys CLI — the full interception chain across Karabiner, skhd, Ghostty, tmux, herdr, and Neovim, plus the shortcuts common apps already own. Use when someone asks what to bind a command to, whether a chord is free, why a shortcut stopped working or fires the wrong thing, which key a layer is stealing, or wants a map of what is currently bound. Also use before adding any keybinding to a config file — a mnemonic-first guess is how conflicts get made.
 ---
 
 # Keys — pick a shortcut the hand can actually reach
@@ -8,7 +8,7 @@ description: Choose and audit keyboard shortcuts with the agentkeys CLI — the 
 Two jobs, and the second one is the reason this skill exists.
 
 1. **Report** what is bound, what shadows what, and what is free. `agentkeys`
-   does this by reading seven layers and normalizing every binding to one key
+  does this by reading six layers and normalizing every binding to one key
    string.
 2. **Advise** on what to bind. A free key is not automatically a good key. Most
    of the work is choosing among the free ones.
@@ -139,34 +139,31 @@ in turn along its hosting path, and whatever a higher layer claims never
 arrives below:
 
 ```
-karabiner → skhd → ghostty → tmux  → nvim
-                          └→ herdr → nvim
-          └──────→ orca ───────────→ nvim
+karabiner → skhd → ghostty ┬→ tmux ─→ nvim
+                          ├→ herdr ─→ nvim
+                          └─────────→ nvim
 ```
 
 - **karabiner** — virtual HID driver, sees keys before macOS does
 - **skhd** — system hotkey daemon, global
 - **ghostty** — the terminal app, while it is focused
-- **orca** — the agent workspace app, while it is focused; hosts terminals of
-  its own
 - **tmux** — inside Ghostty; only root-table (`bind -n`) bindings compete
 - **herdr** — inside Ghostty, beside tmux; only its prefix key and direct
   chords compete
-- **nvim** — inside any of the four apps above
+- **nvim** — directly inside Ghostty or inside either multiplexer
 
 A binding lower on the same path is only reachable if nothing above claims the
 same key. That is a **shadow**. When the higher binding is limited to named
 apps, devices, or modes, it is a **conditional shadow** and the lower binding
-still works everywhere else. **Sibling layers** — ghostty|orca, tmux|herdr —
-share no path: only the focused one ever holds the keystroke, so the same key
-in both is two apps' own shortcut, never a conflict, and `explain` can end in
-`taken by ghostty, orca` with both marked `wins`.
+still works everywhere else. **Sibling layers** tmux and herdr share no path:
+only the active multiplexer receives the keystroke, so the same key in both is
+two apps' own shortcut, never a conflict, and `explain` can end in `taken by
+tmux, herdr` with both marked `wins`.
 
 Keys that cannot collide across layers at all: Neovim leader and `space+` keys,
-tmux and herdr prefix and mode keys, Ghostty chord sequences, Orca chords
-scoped to its editor/browser/settings panes. Bind freely there — it is the
-cheapest place to put a shortcut, and the reason a modal app should use its
-own prefix rather than a global chord.
+tmux and herdr prefix and mode keys, and Ghostty chord sequences. Bind freely
+there — it is the cheapest place to put a shortcut, and the reason a modal app
+should use its own prefix rather than a global chord.
 
 ## Reservations
 
@@ -196,7 +193,6 @@ from a misconfigured one:
 | karabiner | /Users/x/.config/karabiner/karabiner.json | 23 |
 | tmux | /Users/x/.config/tmux/tmux.conf (+5 more) | 34 |
 | ghostty | /Applications/Ghostty.app/Contents/MacOS/ghostty +list-keybinds | 95 |
-| orca | vendored 1.4.177-rc.0 defaults + /Users/x/.orca/keybindings.json | 95 |
 | herdr | vendored 0.8.0 defaults (/Users/x/.config/herdr/config.toml not found) | 52 |
 ```
 
@@ -214,19 +210,18 @@ Each layer comes from the location its own tool documents, under `~/.config`:
 `karabiner/karabiner.json`, `skhd/skhdrc`, `ghostty/config`, `tmux/tmux.conf`
 plus its literal `source-file` targets and `tmux/conf.d/*.conf`,
 `herdr/config.toml` (`XDG_CONFIG_HOME` honored), and `nvim/init.lua` plus
-`nvim/lua/plugins/*.lua` — plus `~/.orca/keybindings.json` for Orca.
+`nvim/lua/plugins/*.lua`.
 
 Ghostty is read from `ghostty +list-keybinds` when the binary is installed,
 because the config file holds only what the user overrode — the app ships
 around ninety-five defaults, and those are the ones that shadow tmux and
-Neovim. Orca and herdr have no dump command at all, so their defaults are
-vendored from the upstream sources, version-stamped in the doctor source row,
-and joined only when the app is present; their config files overlay the
-defaults (rebinds replace, explicit unbinds delete). Override any path with
+Neovim. Herdr has no dump command, so its defaults are vendored from the
+upstream source, version-stamped in the doctor source row, and joined only
+when the app is present; its config file overlays the defaults (rebinds
+replace, explicit unbinds delete). Override any path with
 `AGENTKEYS_KARABINER_CONFIG`, `AGENTKEYS_SKHD_CONFIG`,
 `AGENTKEYS_GHOSTTY_CONFIG`, `AGENTKEYS_GHOSTTY_BIN` (empty disables the
-probe), `AGENTKEYS_ORCA_CONFIG`, `AGENTKEYS_ORCA_BIN`,
-`AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty treats the app as
+probe), `AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty treats the app as
 absent), `AGENTKEYS_TMUX_CONFIG`, `AGENTKEYS_NVIM_CONFIG`.
 
 ## Blind spots
@@ -243,7 +238,7 @@ State these rather than implying coverage the tool does not have:
 - **Karabiner conditions are summarized, not evaluated.** A rule limited to one
   app or the built-in keyboard reports as `wins in context`; whether it fires
   right now depends on state agentkeys cannot see.
-- **Orca and herdr defaults are vendored snapshots.** A newer app build may
+- **Herdr defaults are a vendored snapshot.** A newer app build may
   have moved a chord; the doctor source row names the vendored version, so
   compare it against the installed app when something looks off.
 - **Nothing here is written.** agentkeys only reads. Editing the config file is

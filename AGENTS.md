@@ -1,6 +1,6 @@
 # agentkeys — repository guidance
 
-Reads seven keyboard config formats, normalizes every binding to one canonical
+Reads six keyboard config formats, normalizes every binding to one canonical
 key string, and reports which layer wins each key. Read `README.md` for usage,
 `CONTEXT.md` for the glossary — use its canonical terms in code, comments, and
 commit messages.
@@ -28,7 +28,7 @@ actually contain.
 - `reserved.ts` is authored data, not parsed: shortcuts owned by software with
   no readable config. Advisory only — a Reservation is never a Shadow.
 - `vendored.ts` is authored data too, but real Bindings: defaults transcribed
-  from apps with no dump command (Orca, herdr), version-stamped, verified
+  from Herdr, which has no dump command, version-stamped and verified
   against a source checkout on refresh.
 - `descriptor.ts` is the single source for commands and flags; help, help-json,
   and validation all fall out of it.

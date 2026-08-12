@@ -29,8 +29,8 @@ test("top-level and leaf help are descriptor-backed", async () => {
   expect(leaf.stdout).toContain("--layer");
 });
 
-const LAYER_CHOICES = ["karabiner", "skhd", "ghostty", "orca", "tmux", "herdr", "nvim"];
-const LAYER_SUMMARY = "Filter to a binding layer: karabiner|skhd|ghostty|orca|tmux|herdr|nvim";
+const LAYER_CHOICES = ["karabiner", "skhd", "ghostty", "tmux", "herdr", "nvim"];
+const LAYER_SUMMARY = "Filter to a binding layer: karabiner|skhd|ghostty|tmux|herdr|nvim";
 
 test("leaf help-json projects stable public discovery schema", async () => {
   const expected = {
@@ -184,14 +184,14 @@ test("punctuation spelled by name and by symbol is one key", async () => {
           complex_modifications: {
             rules: [
               {
-                description: "Orca tab navigation",
+                description: "Terminal tab navigation",
                 manipulators: [
                   {
                     from: { key_code: "comma", modifiers: { mandatory: ["option"] } },
                     conditions: [
                       {
                         type: "frontmost_application_if",
-                        bundle_identifiers: ["^com.orca.app$"],
+                        bundle_identifiers: ["^com.example.Terminal$"],
                       },
                     ],
                     to: [{ key_code: "close_bracket", modifiers: ["command", "shift"] }],

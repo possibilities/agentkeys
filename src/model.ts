@@ -2,24 +2,21 @@
 // first, then the skhd hotkey daemon, then whichever app holds focus, then
 // whatever that app hosts. The array is a topological order over the hosting
 // paths below; priority questions go through intercepts(), because array
-// position alone cannot say that ghostty and orca never see the same
-// keystroke.
-export const LAYERS = ["karabiner", "skhd", "ghostty", "orca", "tmux", "herdr", "nvim"] as const;
+// position alone cannot say that tmux and herdr never see the same keystroke.
+export const LAYERS = ["karabiner", "skhd", "ghostty", "tmux", "herdr", "nvim"] as const;
 export type Layer = (typeof LAYERS)[number];
 
 // Who hands keystrokes to whom: tmux and herdr run inside Ghostty, never
-// inside each other; Neovim runs bare in either terminal app or inside tmux
-// or herdr. A layer's bindings can only steal from layers it transitively
-// hosts — sibling layers (ghostty|orca, tmux|herdr) share no hosting path,
-// so neither can shadow the other.
+// inside each other; Neovim runs bare in Ghostty or inside tmux or herdr. A
+// layer's bindings can only steal from layers it transitively hosts — sibling
+// layers tmux and herdr share no hosting path, so neither can shadow the other.
 const HOSTS: Record<Layer, readonly Layer[]> = {
   karabiner: [],
   skhd: ["karabiner"],
   ghostty: ["skhd"],
-  orca: ["skhd"],
   tmux: ["ghostty"],
   herdr: ["ghostty"],
-  nvim: ["ghostty", "orca", "tmux", "herdr"],
+  nvim: ["ghostty", "tmux", "herdr"],
 };
 
 const ANCESTORS: ReadonlyMap<Layer, ReadonlySet<Layer>> = (() => {

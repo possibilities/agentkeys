@@ -37,25 +37,23 @@ How it resolves
 - Reads each layer from the location its own tool documents, under
   $HOME/.config: karabiner/karabiner.json, skhd/skhdrc, ghostty/config,
   tmux/tmux.conf plus tmux/conf.d/*.conf, and nvim/init.lua plus
-  nvim/lua/plugins; plus $HOME/.orca/keybindings.json for Orca and
-  herdr/config.toml (XDG_CONFIG_HOME honored) for herdr. Ghostty prefers
+  nvim/lua/plugins; plus herdr/config.toml (XDG_CONFIG_HOME honored) for
+  herdr. Ghostty prefers
   \`ghostty +list-keybinds\` when the binary is installed, because that
-  reports defaults the config file omits. Orca and herdr have no dump
-  command, so their defaults ship vendored from the upstream sources and
-  join only when the app is present; their config files overlay the
-  defaults. Missing files contribute zero bindings; readable but malformed
-  files fail loudly. Every path is overridable: AGENTKEYS_KARABINER_CONFIG,
-  AGENTKEYS_SKHD_CONFIG, AGENTKEYS_GHOSTTY_CONFIG, AGENTKEYS_GHOSTTY_BIN,
-  AGENTKEYS_ORCA_CONFIG, AGENTKEYS_ORCA_BIN, AGENTKEYS_HERDR_CONFIG,
+  reports defaults the config file omits. Herdr has no dump command, so its
+  defaults ship vendored from the upstream source and join only when the app
+  is present; its config file overlays the defaults. Missing files contribute
+  zero bindings; readable but malformed files fail loudly. Every path is
+  overridable: AGENTKEYS_KARABINER_CONFIG, AGENTKEYS_SKHD_CONFIG,
+  AGENTKEYS_GHOSTTY_CONFIG, AGENTKEYS_GHOSTTY_BIN, AGENTKEYS_HERDR_CONFIG,
   AGENTKEYS_HERDR_BIN, AGENTKEYS_TMUX_CONFIG, AGENTKEYS_NVIM_CONFIG.
 - Layer priority is interception order along hosting paths: karabiner > skhd >
-  the focused app (ghostty or orca), then what it hosts — tmux or herdr inside
-  ghostty — then nvim inside any of them. A higher layer shadows the same
-  canonical key in a lower one on the same path. Sibling layers (ghostty|orca,
-  tmux|herdr) never see the same keystroke and cannot shadow each other. Keys
-  that are local to a layer never conflict across layers: Neovim leader and
-  space keys, tmux and herdr prefix and mode keys, Ghostty chord sequences,
-  Orca chords scoped to its editor/browser/settings panes. A binding that
+  Ghostty, then what it hosts — tmux or herdr — then nvim. A higher layer
+  shadows the same canonical key in a lower one on the same path. Sibling
+  layers tmux and herdr never see the same keystroke and cannot shadow each
+  other. Keys that are local to a layer never conflict across layers: Neovim
+  leader and space keys, tmux and herdr prefix and mode keys, and Ghostty
+  chord sequences. A binding that
   forwards the key onward rather than consuming it — skhd \`* ~\`, Ghostty
   \`text:\` and \`esc:\` — shadows nothing.
 - Well-known shortcuts owned by software with no readable config (macOS,

@@ -9,7 +9,6 @@ import {
   normalizeKarabinerKey,
   normalizeKarabinerMods,
   normalizeNvimKey,
-  normalizeOrcaKey,
   normalizeSkhdKey,
   normalizeSkhdMods,
   normalizeTmuxKey,
@@ -19,8 +18,6 @@ import {
   HERDR_DEFAULT_PREFIX,
   HERDR_DEFAULTS,
   HERDR_VERSION,
-  ORCA_DEFAULTS,
-  ORCA_VERSION,
 } from "./vendored.ts";
 
 function readExistingText(path: string): string | undefined {
@@ -634,122 +631,6 @@ export function parseGhostty(text: string, source: string): Binding[] {
   return bindings;
 }
 
-const ORCA_COMPETING_SCOPES = new Set(["global", "tabs", "terminal"]);
-const ORCA_ROOT_KEYS = new Set(["$schema", "version", "keybindings", "platforms"]);
-
-// null unbinds the action; undefined means the value is not a binding at all.
-function orcaOverrideValue(value: unknown): string[] | null | undefined {
-  if (value === null || value === false) return null;
-  if (typeof value === "string") return value.trim() === "" ? null : [value];
-  if (Array.isArray(value)) {
-    const entries = value.filter(
-      (item): item is string => typeof item === "string" && item.trim() !== "",
-    );
-    return entries.length > 0 ? entries : null;
-  }
-  return undefined;
-}
-
-function orcaOverrides(path: string): Map<string, string[] | null> {
-  const overrides = new Map<string, string[] | null>();
-  const text = readExistingText(path);
-  if (text === undefined) return overrides;
-
-  let data: unknown;
-  try {
-    data = JSON.parse(text);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new AgentkeysError(
-      `Malformed Orca keybindings JSON at ${path}: ${message}`,
-      "malformed_config",
-    );
-  }
-
-  const document = objectValue(data);
-  // The common section is `keybindings`; a file written before that section
-  // existed keeps action ids at the root. The darwin platform section masks
-  // the common one, mirroring Orca's own merge.
-  const common =
-    document.keybindings === undefined
-      ? Object.fromEntries(Object.entries(document).filter(([key]) => !ORCA_ROOT_KEYS.has(key)))
-      : objectValue(document.keybindings);
-  const darwin = objectValue(objectValue(document.platforms).darwin);
-  for (const section of [common, darwin]) {
-    for (const [action, raw] of Object.entries(section)) {
-      const value = orcaOverrideValue(raw);
-      if (value !== undefined) overrides.set(action, value);
-    }
-  }
-  return overrides;
-}
-
-function pushOrcaBindings(
-  bindings: Binding[],
-  action: string,
-  scope: string,
-  chords: readonly string[],
-  source: string,
-  digitRange: boolean,
-): void {
-  for (const chord of chords) {
-    const key = normalizeOrcaKey(chord);
-    if (key === undefined) continue;
-    // A gesture cannot collide with a keystroke; every other non-competing
-    // scope only fires inside Orca's own non-terminal panes.
-    const scoped = !ORCA_COMPETING_SCOPES.has(scope) || key.startsWith("doubletap");
-    // A digit-range chord stores one representative; keys 1-9 all fire it.
-    const separator = key.lastIndexOf("+");
-    const base = key.slice(separator + 1);
-    const expanded =
-      digitRange && /^[1-9]$/.test(base)
-        ? Array.from({ length: 9 }, (_, index) => `${key.slice(0, separator + 1)}${index + 1}`)
-        : [key];
-    for (const expandedKey of expanded) {
-      bindings.push(
-        new Binding({
-          layer: "orca",
-          key: expandedKey,
-          action,
-          mode: scoped && !ORCA_COMPETING_SCOPES.has(scope) ? scope : "",
-          scoped,
-          sourceFile: source,
-        }),
-      );
-    }
-  }
-}
-
-export function parseOrca(path: string): Binding[] {
-  const overrides = orcaOverrides(path);
-  const defaultsLabel = `orca ${ORCA_VERSION} defaults (vendored)`;
-  const bindings: Binding[] = [];
-  const handled = new Set<string>();
-
-  for (const entry of ORCA_DEFAULTS) {
-    handled.add(entry.action);
-    const override = overrides.get(entry.action);
-    const chords = override === undefined ? entry.keys : (override ?? []);
-    pushOrcaBindings(
-      bindings,
-      entry.action,
-      entry.scope,
-      chords,
-      override === undefined ? defaultsLabel : path,
-      entry.digitRange === true,
-    );
-  }
-
-  // Actions the vendored registry does not know — plugin chords, newer Orca
-  // builds. Their scope is unknown, so they count as competing: over-
-  // reporting a shadow beats answering "free" for a chord Orca will swallow.
-  for (const [action, value] of overrides) {
-    if (handled.has(action) || value === null) continue;
-    pushOrcaBindings(bindings, action, "global", value, path, false);
-  }
-  return bindings;
-}
-
 // string[] to rebind, null to unbind, undefined when the field is absent.
 function herdrValue(value: unknown): string[] | null | undefined {
   if (typeof value === "string") return value.trim() === "" ? null : [value];
@@ -874,8 +755,6 @@ export interface ConfigPaths {
   skhd: string;
   ghosttyConfig: string;
   ghosttyBin: string;
-  orcaKeybindings: string;
-  orcaBin: string;
   herdrConfig: string;
   herdrBin: string;
   tmuxConf: string;
@@ -892,17 +771,6 @@ function resolveGhosttyBin(): string {
   // only source — what a hermetic test wants.
   if (override !== undefined) return override;
   return Bun.which("ghostty") ?? (existsSync(GHOSTTY_APP_BIN) ? GHOSTTY_APP_BIN : "");
-}
-
-// orca and herdr expose no dump command, so their binaries are probed only
-// for presence: vendored defaults must not appear on a machine that does not
-// run the app. The same empty-override convention keeps tests hermetic.
-function resolveOrcaBin(): string {
-  const override = process.env.AGENTKEYS_ORCA_BIN;
-  if (override !== undefined) return override;
-  return (
-    Bun.which("orca") ?? (existsSync("/Applications/Orca.app") ? "/Applications/Orca.app" : "")
-  );
 }
 
 function resolveHerdrBin(): string {
@@ -925,8 +793,6 @@ export function defaultPaths(home = process.env.HOME ?? ""): ConfigPaths {
     skhd: env.AGENTKEYS_SKHD_CONFIG ?? join(config, "skhd", "skhdrc"),
     ghosttyConfig: env.AGENTKEYS_GHOSTTY_CONFIG ?? join(config, "ghostty", "config"),
     ghosttyBin: resolveGhosttyBin(),
-    orcaKeybindings: env.AGENTKEYS_ORCA_CONFIG ?? join(home, ".orca", "keybindings.json"),
-    orcaBin: resolveOrcaBin(),
     herdrConfig: env.AGENTKEYS_HERDR_CONFIG ?? join(herdrConfigRoot, "herdr", "config.toml"),
     herdrBin: resolveHerdrBin(),
     tmuxConf: env.AGENTKEYS_TMUX_CONFIG ?? join(config, "tmux", "tmux.conf"),
@@ -1057,7 +923,7 @@ function collectGhostty(paths: ConfigPaths): {
 // Vendored defaults describe an app, not this machine: they only join the
 // inventory when the app is present (binary found or config file written).
 function collectVendored(
-  layer: "orca" | "herdr",
+  layer: "herdr",
   binPath: string,
   configPath: string,
   version: string,
@@ -1094,13 +960,6 @@ export function collectAll(paths: Partial<ConfigPaths> = {}): Inventory {
   const karabiner = parseKarabiner(resolved.karabiner);
   const skhd = parseSkhd(resolved.skhd);
   const ghostty = collectGhostty(resolved);
-  const orca = collectVendored(
-    "orca",
-    resolved.orcaBin,
-    resolved.orcaKeybindings,
-    ORCA_VERSION,
-    parseOrca,
-  );
   const herdr = collectVendored(
     "herdr",
     resolved.herdrBin,
@@ -1118,7 +977,6 @@ export function collectAll(paths: Partial<ConfigPaths> = {}): Inventory {
       ...karabiner,
       ...skhd,
       ...ghostty.bindings,
-      ...orca.bindings,
       ...tmuxBindings,
       ...herdr.bindings,
       ...nvimBindings,
@@ -1137,7 +995,6 @@ export function collectAll(paths: Partial<ConfigPaths> = {}): Inventory {
         bindings: skhd.length,
       },
       ghostty.source,
-      orca.source,
       {
         layer: "tmux",
         source: tmux.length > 0 ? fileSourceLabel(tmux) : resolved.tmuxConf,

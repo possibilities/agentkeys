@@ -330,57 +330,6 @@ export function normalizeGhosttyKey(trigger: string): string | undefined {
   return buildKey(mods, GHOSTTY_KEYS[base.toLowerCase()] ?? normalizeBaseKey(base));
 }
 
-const ORCA_MODS: Record<string, string> = {
-  // Mod is Cmd on darwin, the only platform whose column agentkeys vendors.
-  mod: "cmd",
-  cmdorctrl: "cmd",
-  commandorcontrol: "cmd",
-  cmd: "cmd",
-  command: "cmd",
-  meta: "cmd",
-  ctrl: "ctrl",
-  control: "ctrl",
-  alt: "alt",
-  option: "alt",
-  opt: "alt",
-  shift: "shift",
-};
-
-const ORCA_KEYS: Record<string, string> = {
-  arrowup: "up",
-  arrowdown: "down",
-  arrowleft: "left",
-  arrowright: "right",
-  enter: "return",
-  // Orca folds the plus spelling onto the physical `=` key, same as Ghostty.
-  plus: "=",
-  pageup: "pageup",
-  pagedown: "pagedown",
-  numpadadd: "numpadadd",
-  numpadsubtract: "numpadsubtract",
-};
-
-// Orca chords arrive in the registry's canonical spelling from the vendored
-// defaults and in any user spelling from keybindings.json; both use the same
-// token vocabulary. Returns undefined for an empty chord.
-export function normalizeOrcaKey(chord: string): string | undefined {
-  const parts = chord
-    .split("+")
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
-  if (parts.length === 0) return undefined;
-
-  // A double-tap is a gesture on a lone modifier. No other layer can spell
-  // it, so it keeps its own name and collides with nothing.
-  if (parts.some((part) => part.toLowerCase() === "doubletap")) {
-    return parts.map((part) => part.toLowerCase()).join("+");
-  }
-
-  const base = parts.pop() ?? "";
-  const mods = parts.map((part) => ORCA_MODS[part.toLowerCase()] ?? part.toLowerCase());
-  return buildKey(mods, ORCA_KEYS[base.toLowerCase()] ?? normalizeBaseKey(base));
-}
-
 const HERDR_KEYS: Record<string, string> = {
   esc: "escape",
   enter: "return",

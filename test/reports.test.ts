@@ -79,48 +79,39 @@ test("conflicts honor priority, conditional shadows, and layer-scoped exclusion"
   expect(renderCheatsheet(bindings, bindings)).toContain("(shadowed)");
 });
 
-// Sibling layers — ghostty|orca, tmux|herdr — share no hosting path: only the
-// focused app ever holds the keystroke, so identical keys across siblings are
-// two apps' own shortcuts, never a Shadow.
+// Sibling layers tmux and herdr share no hosting path: only the selected
+// multiplexer receives the keystroke, so identical keys are never a Shadow.
 test("interception follows hosting paths, so siblings never conflict", () => {
   const siblings = [
-    new Binding({ layer: "ghostty", key: "cmd+t", action: "new tab" }),
-    new Binding({ layer: "orca", key: "cmd+t", action: "new terminal tab" }),
     new Binding({ layer: "tmux", key: "ctrl+b", action: "prefix" }),
     new Binding({ layer: "herdr", key: "ctrl+b", action: "prefix" }),
   ];
   expect(detectConflicts(siblings)).toEqual([]);
 
   // The same keys against a hosted layer are still real shadows.
-  const hosted = [
-    ...siblings,
-    new Binding({ layer: "nvim", key: "ctrl+b", action: "page back" }),
-    new Binding({ layer: "nvim", key: "cmd+t", action: "tag jump" }),
-  ];
+  const hosted = [...siblings, new Binding({ layer: "nvim", key: "ctrl+b", action: "page back" })];
   const conflicts = detectConflicts(hosted).map((conflict) => [
     conflict.key,
     conflict.higherLayer,
     conflict.lowerLayer,
   ]);
   expect(conflicts).toEqual([
-    ["cmd+t", "ghostty", "nvim"],
-    ["cmd+t", "orca", "nvim"],
     ["ctrl+b", "tmux", "nvim"],
     ["ctrl+b", "herdr", "nvim"],
   ]);
 
   // Both siblings win outright in their own worlds; neither is shadowed.
-  const explanation = explainKey(siblings, "cmd+t");
+  const explanation = explainKey(siblings, "ctrl+b");
   expect(explanation.owners.map((owner) => [owner.layer, owner.verdict])).toEqual([
-    ["ghostty", "wins"],
-    ["orca", "wins"],
+    ["tmux", "wins"],
+    ["herdr", "wins"],
   ]);
-  expect(explanation.verdict).toBe("taken by ghostty, orca");
+  expect(explanation.verdict).toBe("taken by tmux, herdr");
 
-  // A sibling's bindings never block a slot: orca's cmd+t does not reach tmux.
-  const orcaOnly = [new Binding({ layer: "orca", key: "cmd+t", action: "new terminal tab" })];
-  expect(findAvailable(orcaOnly, "cmd", "tmux").available).toContain("t");
-  expect(findAvailable(orcaOnly, "cmd", "nvim").available).not.toContain("t");
+  // A sibling's binding never blocks a slot in the other multiplexer.
+  const tmuxOnly = [new Binding({ layer: "tmux", key: "ctrl+b", action: "prefix" })];
+  expect(findAvailable(tmuxOnly, "ctrl", "herdr").available).toContain("b");
+  expect(findAvailable(tmuxOnly, "ctrl", "nvim").available).not.toContain("b");
 });
 
 test("doctor aggregates contextual higher-layer records and ignores passthrough", () => {

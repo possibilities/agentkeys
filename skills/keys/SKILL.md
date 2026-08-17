@@ -65,6 +65,22 @@ shortcuts are two-handed and mnemonic. But actions that follow a pointer get a
 chord the keyboard-side hand can hit alone. Same app, two different rules,
 chosen by posture.
 
+## Check what has focus
+
+A key can be free across every Layer and still belong to the interaction under
+the cursor. Before proposing an app-internal Binding, identify which controls
+and modes can have focus and preserve the keyboard behavior their users will
+expect: text inputs may provide readline-style editing, lists use navigation
+keys, dialogs own return and escape, and embedded web content inherits browser
+conventions.
+
+Prefer scoping the new action away from the control or mode that already uses
+the key. If overriding that behavior is deliberate, name what the user loses
+and make sure there is another way to reach it. When building the app, inspect
+the actual component or library rather than assuming every input implements the
+same conventions; Reservations are prompts for this check, not a complete map
+of app-internal behavior.
+
 ## Then reach
 
 With cmd or ctrl held by the same hand's thumb or pinky, one-handed reach is

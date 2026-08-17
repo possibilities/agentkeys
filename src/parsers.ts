@@ -1,7 +1,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+// Not Bun.TOML: it tokenizes a `[[` that opens a *value* as an
+// array-of-tables header, so `rows = [["state_icon", "agent"]]` — herdr's
+// documented sidebar row layout — fails to parse. smol-toml is TOML 1.0
+// complete.
+import { parse as parseToml, TomlError } from "smol-toml";
 import { AgentkeysError } from "./errors.ts";
-import { Binding, type Displacement } from "./model.ts";
+import { Binding, type Displacement, type Layer } from "./model.ts";
 import {
   buildKey,
   normalizeGhosttyKey,
@@ -58,6 +63,16 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+// A parse failure names file:line the way every other loud parser here does.
+// smol-toml's own message trails a multi-line source excerpt, which would
+// wreck the one-line-per-layer shape a degraded report is rendered in.
+function tomlFailure(error: unknown, path: string): string {
+  const summary = (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
+  return error instanceof TomlError
+    ? `${path}:${error.line}:${error.column}: ${summary}`
+    : `${path}: ${summary}`;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -699,11 +714,10 @@ export function parseHerdrDefaultConfig(text: string, source: string): HerdrDefa
 
   let keys: Record<string, unknown>;
   try {
-    keys = objectValue(objectValue(Bun.TOML.parse(assignments.join("\n"))).keys);
+    keys = objectValue(objectValue(parseToml(assignments.join("\n"))).keys);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
     throw new AgentkeysError(
-      `Malformed herdr default config from ${source}: ${message}`,
+      `Malformed herdr default config from ${tomlFailure(error, source)}`,
       "malformed_config",
     );
   }
@@ -753,10 +767,12 @@ function parseHerdrInventory(
   let keys: Record<string, unknown> = {};
   if (text !== undefined) {
     try {
-      keys = objectValue(objectValue(Bun.TOML.parse(text)).keys);
+      keys = objectValue(objectValue(parseToml(text)).keys);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new AgentkeysError(`Malformed herdr TOML at ${path}: ${message}`, "malformed_config");
+      throw new AgentkeysError(
+        `Malformed herdr TOML at ${tomlFailure(error, path)}`,
+        "malformed_config",
+      );
     }
   }
 
@@ -1027,12 +1043,25 @@ export interface LayerSource {
   source: string;
   found: boolean;
   bindings: number;
+  // Present only on a Degraded layer, and the reason it holds no bindings.
+  error?: string;
+}
+
+// A layer whose config could not be read. Every report names these, because a
+// verdict computed without a layer is not the same answer as one computed with
+// it — an unread layer's keys would otherwise read as free.
+export interface LayerFailure {
+  layer: Layer;
+  source: string;
+  code: string;
+  message: string;
 }
 
 export interface Inventory {
   bindings: Binding[];
   displacements: Displacement[];
   sources: LayerSource[];
+  degraded: LayerFailure[];
 }
 
 function fileSourceLabel(files: readonly string[]): string {
@@ -1134,54 +1163,107 @@ function collectHerdr(paths: ConfigPaths): {
   };
 }
 
+interface LayerCollection {
+  bindings: Binding[];
+  displacements: Displacement[];
+  source: LayerSource;
+}
+
+// One layer's bad config used to abort the process, so a malformed herdr file
+// took every query about every other layer down with it. A domain failure here
+// costs its own layer and nothing else. Anything that is not an AgentkeysError
+// is a bug in a parser and still crashes: swallowing that would trade a loud
+// failure for a wrong answer.
+function collectLayer(
+  layer: Layer,
+  fallbackSource: string,
+  collect: () => LayerCollection,
+): { collection: LayerCollection; failure: LayerFailure | undefined } {
+  try {
+    return { collection: collect(), failure: undefined };
+  } catch (error) {
+    if (!(error instanceof AgentkeysError)) throw error;
+    return {
+      collection: {
+        bindings: [],
+        displacements: [],
+        source: { layer, source: fallbackSource, found: false, bindings: 0, error: error.message },
+      },
+      failure: { layer, source: fallbackSource, code: error.code, message: error.message },
+    };
+  }
+}
+
 export function collectAll(paths: Partial<ConfigPaths> = {}): Inventory {
   const resolved = { ...defaultPaths(), ...paths };
-  const karabiner = parseKarabiner(resolved.karabiner);
-  const skhd = parseSkhd(resolved.skhd);
-  const ghostty = collectGhostty(resolved);
-  const herdr = collectHerdr(resolved);
-  const tmux = tmuxFiles(resolved).filter((file) => existsSync(file));
-  const tmuxBindings = parseTmux(tmux);
-  const nvim = nvimFiles(resolved).filter((file) => existsSync(file));
-  const nvimBindings = parseNvim(nvim);
+  // Interception order, so bindings and the doctor source table both come out
+  // in priority order without a second sort.
+  const collected = [
+    collectLayer("karabiner", resolved.karabiner, () => {
+      const bindings = parseKarabiner(resolved.karabiner);
+      return {
+        bindings,
+        displacements: [],
+        source: {
+          layer: "karabiner",
+          source: resolved.karabiner,
+          found: existsSync(resolved.karabiner),
+          bindings: bindings.length,
+        },
+      };
+    }),
+    collectLayer("skhd", resolved.skhd, () => {
+      const bindings = parseSkhd(resolved.skhd);
+      return {
+        bindings,
+        displacements: [],
+        source: {
+          layer: "skhd",
+          source: resolved.skhd,
+          found: existsSync(resolved.skhd),
+          bindings: bindings.length,
+        },
+      };
+    }),
+    collectLayer("ghostty", resolved.ghosttyConfig, () => {
+      const ghostty = collectGhostty(resolved);
+      return { bindings: ghostty.bindings, displacements: [], source: ghostty.source };
+    }),
+    collectLayer("tmux", resolved.tmuxConf, () => {
+      const files = tmuxFiles(resolved).filter((file) => existsSync(file));
+      const bindings = parseTmux(files);
+      return {
+        bindings,
+        displacements: [],
+        source: {
+          layer: "tmux",
+          source: files.length > 0 ? fileSourceLabel(files) : resolved.tmuxConf,
+          found: files.length > 0,
+          bindings: bindings.length,
+        },
+      };
+    }),
+    collectLayer("herdr", resolved.herdrConfig, () => collectHerdr(resolved)),
+    collectLayer("nvim", resolved.nvimInit, () => {
+      const files = nvimFiles(resolved).filter((file) => existsSync(file));
+      const bindings = parseNvim(files);
+      return {
+        bindings,
+        displacements: [],
+        source: {
+          layer: "nvim",
+          source: files.length > 0 ? fileSourceLabel(files) : resolved.nvimInit,
+          found: files.length > 0,
+          bindings: bindings.length,
+        },
+      };
+    }),
+  ];
 
   return {
-    bindings: [
-      ...karabiner,
-      ...skhd,
-      ...ghostty.bindings,
-      ...tmuxBindings,
-      ...herdr.bindings,
-      ...nvimBindings,
-    ],
-    displacements: herdr.displacements,
-    sources: [
-      {
-        layer: "karabiner",
-        source: resolved.karabiner,
-        found: existsSync(resolved.karabiner),
-        bindings: karabiner.length,
-      },
-      {
-        layer: "skhd",
-        source: resolved.skhd,
-        found: existsSync(resolved.skhd),
-        bindings: skhd.length,
-      },
-      ghostty.source,
-      {
-        layer: "tmux",
-        source: tmux.length > 0 ? fileSourceLabel(tmux) : resolved.tmuxConf,
-        found: tmux.length > 0,
-        bindings: tmuxBindings.length,
-      },
-      herdr.source,
-      {
-        layer: "nvim",
-        source: nvim.length > 0 ? fileSourceLabel(nvim) : resolved.nvimInit,
-        found: nvim.length > 0,
-        bindings: nvimBindings.length,
-      },
-    ],
+    bindings: collected.flatMap((entry) => entry.collection.bindings),
+    displacements: collected.flatMap((entry) => entry.collection.displacements),
+    sources: collected.map((entry) => entry.collection.source),
+    degraded: collected.flatMap((entry) => entry.failure ?? []),
   };
 }

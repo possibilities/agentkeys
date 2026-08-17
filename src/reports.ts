@@ -11,7 +11,7 @@ import {
   priorityIndex,
 } from "./model.ts";
 import { buildKey, normalizeBaseKey, normalizeModifierCombo } from "./normalize.ts";
-import type { LayerSource } from "./parsers.ts";
+import type { LayerFailure, LayerSource } from "./parsers.ts";
 import { type Reservation, reservationsFor } from "./reserved.ts";
 
 export type OutputFormat = "json" | "yaml" | "table";
@@ -114,6 +114,20 @@ export function renderBindings(bindings: readonly Binding[], format: OutputForma
     .join("\n")}\n`;
 }
 
+// Every answer built from a partial inventory carries this, because the
+// dangerous reading of a missing layer is not "unknown" but "free".
+export function degradedNotice(degraded: readonly LayerFailure[]): string {
+  if (degraded.length === 0) return "";
+  const layers = degraded.map((failure) => failure.layer).join(", ");
+  const lines = [
+    `Warning: ${degraded.length === 1 ? "1 layer" : `${degraded.length} layers`} could not be read (${layers}); this answer is computed without ${degraded.length === 1 ? "it" : "them"}.`,
+  ];
+  for (const failure of degraded) {
+    lines.push(`  ${failure.layer.padEnd(10)} ${failure.message}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 export function detectConflicts(bindings: readonly Binding[]): Conflict[] {
   const byKey = new Map<string, Binding[]>();
   for (const binding of bindings) {
@@ -178,11 +192,30 @@ export function renderDoctor(
     "|-------|--------|----------|",
   ];
   for (const source of sources) {
-    lines.push(
-      `| ${source.layer} | ${source.found ? source.source : `${source.source} (not found)`} | ${source.found ? source.bindings : "—"} |`,
-    );
+    // Unreadable is not the same as absent: a layer that exists and failed to
+    // parse says so here rather than passing for one that was never installed.
+    const label =
+      source.error !== undefined
+        ? `${source.source} (unreadable)`
+        : source.found
+          ? source.source
+          : `${source.source} (not found)`;
+    lines.push(`| ${source.layer} | ${label} | ${source.found ? source.bindings : "—"} |`);
   }
   lines.push("");
+
+  const unreadable = sources.filter((source) => source.error !== undefined);
+  if (unreadable.length > 0) {
+    lines.push(`## Unreadable layers (${unreadable.length})`, "");
+    for (const source of unreadable) {
+      lines.push(`- **${source.layer}** — ${source.error}`);
+    }
+    lines.push(
+      "",
+      "Keys bound only there are missing from every report below, so they read as free.",
+      "",
+    );
+  }
 
   if (shadows.length > 0) {
     lines.push(
@@ -345,6 +378,7 @@ export interface KeyExplanation {
   owners: KeyOwner[];
   displacements: Displacement[];
   reserved: Reservation[];
+  degraded: LayerFailure[];
   verdict: string;
 }
 
@@ -352,6 +386,7 @@ export function explainKey(
   bindings: readonly Binding[],
   keyInput: string,
   displacements: readonly Displacement[] = [],
+  degraded: readonly LayerFailure[] = [],
 ): KeyExplanation {
   const parts = keyInput
     .split("+")
@@ -413,18 +448,26 @@ export function explainKey(
   } else {
     verdict = "free";
   }
+  // The verdict line is the one part of `explain` a reader trusts alone, so it
+  // carries the caveat itself rather than relying on the notice above it.
+  if (degraded.length > 0) {
+    verdict += ` (computed without ${degraded.map((failure) => failure.layer).join(", ")})`;
+  }
 
   return {
     key,
     owners,
     displacements: displacements.filter((displacement) => displacement.key === key),
     reserved,
+    degraded: [...degraded],
     verdict,
   };
 }
 
 export function renderExplain(explanation: KeyExplanation): string {
-  const lines = [explanation.key, ""];
+  const notice = degradedNotice(explanation.degraded);
+  const lines = notice === "" ? [] : [notice.trimEnd(), ""];
+  lines.push(explanation.key, "");
 
   if (explanation.owners.length === 0) {
     lines.push("No binding in any layer.");

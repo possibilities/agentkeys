@@ -23,6 +23,7 @@
     "check": "bun run lint && bun run typecheck && bun run test"
   },
   "dependencies": {
+    "smol-toml": "1.8.0",
     "yaml": "2.8.1"
   },
   "devDependencies": {

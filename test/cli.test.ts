@@ -342,27 +342,45 @@ test("CLI rejects bad arguments with nonzero status", async () => {
   expect(badFormat.stderr).toContain("Invalid value");
 });
 
-test("CLI reports malformed readable config without a stack trace", async () => {
+test("CLI answers around a malformed readable config without a stack trace", async () => {
   const home = tempHome();
   writeFixture(home, ".config/karabiner/karabiner.json", "{");
+  writeFixture(home, ".config/skhd/skhdrc", "cmd - a : echo a\n");
 
-  // A machine format honors the envelope contract even on failure.
+  // A machine format keeps its stdout one clean envelope; the degradation is
+  // stderr's job there, because the envelope shape cannot carry it.
   const machine = await runCli(["list-bindings"], { HOME: home });
-  expect(machine.exitCode).toBe(1);
-  expect(JSON.parse(machine.stdout)).toMatchObject({
-    schema_version: 1,
-    ok: false,
-    error: {
-      code: "malformed_config",
-      message: expect.stringContaining("Malformed Karabiner JSON"),
-    },
-    data: null,
-  });
-  expect(machine.stdout).not.toContain("\n    at ");
+  expect(machine.exitCode).toBe(0);
+  const envelope = JSON.parse(machine.stdout);
+  expect(envelope).toMatchObject({ schema_version: 1, ok: true, error: null });
+  expect(envelope.data.some((record: { layer: string }) => record.layer === "skhd")).toBe(true);
+  expect(envelope.data.some((record: { layer: string }) => record.layer === "karabiner")).toBe(
+    false,
+  );
+  expect(machine.stderr).toContain("Malformed Karabiner JSON");
+  expect(machine.stderr).not.toContain("\n    at ");
 
-  // A human format keeps the failure on stderr.
-  const human = await runCli(["doctor"], { HOME: home });
-  expect(human.exitCode).toBe(1);
-  expect(human.stderr).toContain("Malformed Karabiner JSON");
-  expect(human.stderr).not.toContain("\n    at ");
+  // doctor names the layer where it names every other source.
+  const doctor = await runCli(["doctor"], { HOME: home });
+  expect(doctor.exitCode).toBe(0);
+  expect(doctor.stdout).toContain("Unreadable layers");
+  expect(doctor.stdout).toContain("Malformed Karabiner JSON");
+  expect(doctor.stdout).not.toContain("\n    at ");
+
+  // The verdict a human reads carries the caveat itself: an unread layer's
+  // keys must never quietly read as free.
+  const explain = await runCli(["explain", "--key", "cmd+shift+h"], { HOME: home });
+  expect(explain.exitCode).toBe(0);
+  expect(explain.stdout).toContain("could not be read (karabiner)");
+  expect(explain.stdout).toContain("Verdict: free (computed without karabiner).");
+
+  const explainJson = await runCli(["explain", "--key", "cmd+shift+h", "--format", "json"], {
+    HOME: home,
+  });
+  expect(explainJson.exitCode).toBe(0);
+  expect(JSON.parse(explainJson.stdout)).toMatchObject({
+    ok: true,
+    data: { degraded: [{ layer: "karabiner", code: "malformed_config" }] },
+  });
+  expect(explainJson.stderr).toContain("Malformed Karabiner JSON");
 });

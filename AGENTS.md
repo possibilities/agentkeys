@@ -21,8 +21,10 @@ actually contain.
   priority test, because sibling layers never shadow each other. Everything
   downstream derives from it, including the descriptor's `--layer` choices.
 - `parsers.ts` is one function per format plus discovery. `collectAll` returns
-  bindings *and* a source manifest; nothing may report an empty inventory
-  without saying which files it failed to find.
+  bindings *and* a source manifest *and* the degraded layers; nothing may
+  report an empty inventory without saying which files it failed to find or
+  failed to parse. Each layer is collected behind `collectLayer`, so a domain
+  error costs that layer alone — only a bug in a parser still crashes.
 - `normalize.ts` is the whole reason cross-layer comparison works. Every
   parser converts into the canonical key here and nowhere else.
 - `reserved.ts` is authored data, not parsed: shortcuts owned by software with
@@ -39,7 +41,8 @@ The decisions that shaped the design live in `docs/adr/`, one per file:
 interception order as the priority chain, the Ghostty binary over its config
 file, documented `~/.config` discovery, layer-scoped keys excluded from
 conflicts, passthrough bindings shadowing nothing, interception following
-hosting paths, and live defaults preferred over visibly labeled fallbacks.
+hosting paths, live defaults preferred over visibly labeled fallbacks, and a
+layer's parse failure costing that layer alone.
 Read them before changing a parser or the conflict logic; append a new numbered
 record rather than editing an old one.
 

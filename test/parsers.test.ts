@@ -486,8 +486,9 @@ test("collectAll labels the vendored herdr fallback when no dump is available", 
   );
 });
 
-test("collectAll fails loudly when a successful herdr dump is malformed", () => {
+test("collectAll degrades the herdr layer when a successful dump is malformed", () => {
   const root = tempRoot();
+  const skhd = writeFixture(root, "skhdrc", "cmd - a : echo a\n");
   const bin = writeFixture(
     root,
     "herdr",
@@ -502,14 +503,78 @@ test("collectAll fails loudly when a successful herdr dump is malformed", () => 
   );
   chmodSync(bin, 0o755);
 
-  expect(() =>
-    collectAll({
-      ...defaultPaths(root),
-      ghosttyBin: "",
-      herdrBin: bin,
-      herdrConfig: join(root, "missing-herdr.toml"),
-    }),
-  ).toThrow("Malformed herdr default config");
+  const inventory = collectAll({
+    ...defaultPaths(root),
+    skhd,
+    ghosttyBin: "",
+    herdrBin: bin,
+    herdrConfig: join(root, "missing-herdr.toml"),
+  });
+
+  expect(inventory.degraded).toHaveLength(1);
+  expect(inventory.degraded[0]?.layer).toBe("herdr");
+  expect(inventory.degraded[0]?.code).toBe("malformed_config");
+  expect(inventory.degraded[0]?.message).toContain("Malformed herdr default config");
+  // The layer is out, but every other layer still answers.
+  expect(inventory.bindings.some((binding) => binding.layer === "skhd")).toBe(true);
+  expect(inventory.bindings.some((binding) => binding.layer === "herdr")).toBe(false);
+  const source = inventory.sources.find((entry) => entry.layer === "herdr");
+  expect(source?.found).toBe(false);
+  expect(source?.error).toContain("Malformed herdr default config");
+});
+
+// The shape that took the whole CLI down: Bun.TOML read a `[[` opening a
+// value as an array-of-tables header, and herdr's documented sidebar row
+// layout is exactly that.
+test("parses a herdr config whose values are arrays of arrays", () => {
+  const root = tempRoot();
+  const config = writeFixture(
+    root,
+    "herdr.toml",
+    [
+      "[keys]",
+      'prefix = "ctrl+space"',
+      "",
+      "[ui.sidebar.agents]",
+      'rows = [["state_icon", "agent"]]',
+      "",
+      "[ui.sidebar.spaces]",
+      "rows = [",
+      '  ["state_icon"],',
+      '  ["space"],',
+      "]",
+    ].join("\n"),
+  );
+
+  const inventory = collectAll({
+    ...defaultPaths(root),
+    ghosttyBin: "",
+    herdrBin: "",
+    herdrConfig: config,
+  });
+
+  expect(inventory.degraded).toEqual([]);
+  expect(
+    inventory.bindings.some((binding) => binding.layer === "herdr" && binding.key === "ctrl+space"),
+  ).toBe(true);
+});
+
+test("a malformed herdr config names file:line and costs only its own layer", () => {
+  const root = tempRoot();
+  const skhd = writeFixture(root, "skhdrc", "cmd - a : echo a\n");
+  const config = writeFixture(root, "herdr.toml", "[keys]\nprefix = \nnext_tab = 1\n");
+
+  const inventory = collectAll({
+    ...defaultPaths(root),
+    skhd,
+    ghosttyBin: "",
+    herdrBin: "",
+    herdrConfig: config,
+  });
+
+  expect(inventory.degraded).toHaveLength(1);
+  expect(inventory.degraded[0]?.message).toContain(`${config}:2:`);
+  expect(inventory.bindings.some((binding) => binding.layer === "skhd")).toBe(true);
 });
 
 test("collectAll accepts injected paths, reports sources, and treats missing files as empty", () => {

@@ -209,7 +209,8 @@ agentkeys show-cheatsheet [--layer L]                   # Markdown, by priority
 
 Start with `doctor`. Its first section names the file each layer was read from
 and how many bindings came out, which is the only way to tell a quiet machine
-from a misconfigured one:
+from a misconfigured one — and an "Unreadable layers" section appears under it
+whenever a config would not parse:
 
 ```
 | Layer | Source | Bindings |
@@ -226,8 +227,12 @@ envelope on stdout — `list-bindings` in its default json (or yaml), and
 failure there is the same envelope with `ok:false` and a snake_case
 `error.code`. Exit 0 success, 2 usage fault (never an envelope), 1 anything
 else. An explanation includes active owners plus any same-Layer Displacements.
-A malformed but readable config fails loudly with `file:line`; a missing config
-contributes nothing.
+A missing config contributes nothing. A malformed but readable one fails loudly
+with `file:line` and costs its own layer only — the command still answers and
+still exits 0, so **check for the degraded layers before trusting a verdict**:
+they are on stderr for every command, in `explain --format json` as
+`data.degraded`, and in the human `explain` verdict itself, which reads
+`free (computed without herdr)` rather than plain `free`.
 
 ## Where configuration is read from
 

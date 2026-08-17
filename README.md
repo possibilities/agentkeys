@@ -36,8 +36,11 @@ Machine formats emit the stable `{schema_version, ok, error, data}` envelope
 on stdout: `list-bindings` in json (the default) or yaml, and `explain
 --format json`. Exit 0 on success, exit 1 with `ok:false` and a snake_case
 `error.code` on a domain failure, exit 2 for a usage fault — which is never an
-envelope, so stdout is parseable whenever a command actually ran. The `keys`
-skill in `skills/` teaches an agent to drive all of it.
+envelope, so stdout is parseable whenever a command actually ran. A config that
+will not parse costs its own layer only: the command still answers and still
+exits 0, naming the degraded layers on stderr, in `explain --format json` as
+`data.degraded`, and under doctor's "Unreadable layers". The `keys` skill in
+`skills/` teaches an agent to drive all of it.
 
 ## Where configuration comes from
 

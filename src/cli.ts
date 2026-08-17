@@ -10,8 +10,9 @@ import {
 import { failure, success } from "./envelope.ts";
 import { AgentkeysError, UsageError } from "./errors.ts";
 import { isLayer, type Layer } from "./model.ts";
-import { collectAll } from "./parsers.ts";
+import { collectAll, type Inventory } from "./parsers.ts";
 import {
+  degradedNotice,
   explainKey,
   filterBindings,
   findAvailable,
@@ -43,7 +44,9 @@ How it resolves
   reports defaults the config file omits. Herdr prefers
   \`herdr --default-config\`, with a labeled vendored fallback for older
   binaries; its config file overlays the defaults. Missing files contribute
-  zero bindings; readable but malformed files fail loudly. Every path is
+  zero bindings; a readable but malformed file fails loudly for its own layer
+  only — the command still answers from the layers that parsed, names the
+  degraded ones, and says the verdict was computed without them. Every path is
   overridable: AGENTKEYS_KARABINER_CONFIG, AGENTKEYS_SKHD_CONFIG,
   AGENTKEYS_GHOSTTY_CONFIG, AGENTKEYS_GHOSTTY_BIN, AGENTKEYS_HERDR_CONFIG,
   AGENTKEYS_HERDR_BIN, AGENTKEYS_TMUX_CONFIG, AGENTKEYS_NVIM_CONFIG.
@@ -81,6 +84,9 @@ Contract
   on stdout: list-bindings --format json (the default) or yaml, and
   explain --format json for a single key. A domain failure there is the same
   envelope with ok:false and a snake_case error.code.
+- A degraded run still exits 0 with a real answer. Every command names the
+  unreadable layers on stderr; explain --format json also carries them in
+  data.degraded, and doctor lists them under "Unreadable layers".
 - Exit codes: 0 success, 2 usage fault, 1 any other failure. A usage fault
   exits before the command runs and is never an envelope.
 - agentkeys <command> --help-json prints machine-readable flags per command.`;
@@ -238,6 +244,20 @@ function asFormat(value: unknown): OutputFormat {
   return value as OutputFormat;
 }
 
+// Where a Degraded layer gets announced. A human report carries it on stdout,
+// beside the answer it qualifies; a machine format cannot, because its stdout
+// is one fixed envelope, so it goes to stderr. "report" is for the commands
+// that render the degradation themselves. Never both, or a terminal shows the
+// same warning twice.
+function takeInventory(notify: "stdout" | "stderr" | "report"): Inventory {
+  const inventory = collectAll();
+  const notice = notify === "report" ? "" : degradedNotice(inventory.degraded);
+  if (notice === "") return inventory;
+  if (notify === "stdout") writeStdout(`${notice}\n`);
+  else writeStderr(notice);
+  return inventory;
+}
+
 function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   if (flags.help === true) {
     writeStdout(commandHelp(command));
@@ -249,7 +269,10 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   }
 
   if (command.name === "list-bindings") {
-    const bindings = filterBindings(collectAll().bindings, {
+    // The json and yaml envelopes are a fixed shape, so their degradation
+    // notice stays on stderr; the table is a human report and carries it.
+    const inventory = takeInventory(asFormat(flags.format) === "table" ? "stdout" : "stderr");
+    const bindings = filterBindings(inventory.bindings, {
       layer: asLayer(flags.layer),
       modifier: typeof flags.modifier === "string" ? flags.modifier : undefined,
     });
@@ -258,7 +281,7 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   }
 
   if (command.name === "show-cheatsheet") {
-    const allBindings = collectAll().bindings;
+    const allBindings = takeInventory("stdout").bindings;
     const filtered = filterBindings(allBindings, {
       layer: asLayer(flags.layer),
     });
@@ -267,7 +290,9 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   }
 
   if (command.name === "doctor") {
-    const inventory = collectAll();
+    // The source table names every unreadable layer already; a second copy
+    // above it would say the same thing twice.
+    const inventory = takeInventory("report");
     writeStdout(renderDoctor(inventory.bindings, inventory.sources));
     return 0;
   }
@@ -277,7 +302,9 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
     if (!layer || typeof flags.modifier !== "string") {
       throw new UsageError("find-available requires --modifier and --layer");
     }
-    writeStdout(renderAvailable(findAvailable(collectAll().bindings, flags.modifier, layer)));
+    writeStdout(
+      renderAvailable(findAvailable(takeInventory("stdout").bindings, flags.modifier, layer)),
+    );
     return 0;
   }
 
@@ -285,8 +312,15 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
     if (typeof flags.key !== "string") {
       throw new UsageError("explain requires --key");
     }
-    const inventory = collectAll();
-    const explanation = explainKey(inventory.bindings, flags.key, inventory.displacements);
+    // renderExplain prints the notice itself, and the json envelope carries it
+    // as data.degraded.
+    const inventory = takeInventory(flags.format === "json" ? "stderr" : "report");
+    const explanation = explainKey(
+      inventory.bindings,
+      flags.key,
+      inventory.displacements,
+      inventory.degraded,
+    );
     writeStdout(
       flags.format === "json"
         ? `${JSON.stringify(success(explanation), null, 2)}\n`
@@ -327,6 +361,10 @@ export function main(argv = process.argv.slice(2)): number {
       writeStderr(`${error.message}\n`);
       return error.exitCode;
     }
+    // A parse failure no longer arrives here — collectLayer degrades its own
+    // layer instead — but the envelope contract promises an ok:false outcome
+    // for any domain failure, so this stays the backstop for one raised
+    // outside layer collection.
     if (error instanceof AgentkeysError) {
       if (format === undefined) {
         writeStderr(`${error.message}\n`);

@@ -101,8 +101,8 @@ export async function runCli(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["bun", fixturePath(import.meta.dir, "../src/cli.ts"), ...args], {
     cwd: "/tmp",
-    // Empty binary paths keep the Ghostty probe and the Herdr presence check
-    // from reaching the real installed apps, and an empty
+    // Empty binary paths keep the Ghostty and Herdr probes from reaching the
+    // real installed apps, and an empty
     // XDG_CONFIG_HOME keeps herdr discovery inside the fixture HOME, so a
     // fixture HOME describes the whole inventory. They must land after the
     // process env, or real values in the parent environment would silently

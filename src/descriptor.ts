@@ -54,7 +54,7 @@ export const COMMANDS = [
       {
         name: "modifier",
         type: "string",
-        summary: "Filter by canonical modifier or modifier combo",
+        summary: "Filter by canonical modifier combo or scope prefix",
       },
       {
         name: "format",
@@ -76,13 +76,13 @@ export const COMMANDS = [
   },
   {
     name: "find-available",
-    summary: "Find priority-safe unused keys for a modifier combo",
+    summary: "Find priority-safe unused keys for a modifier combo or scope prefix",
     flags: [
       ...HELP_FLAGS,
       {
         name: "modifier",
         type: "string",
-        summary: "Required modifier combo to check",
+        summary: "Required modifier combo or scope prefix to check",
         required: true,
       },
       {
@@ -115,5 +115,6 @@ export const COMMANDS = [
 
 export const PROGRAM = {
   name: "agentkeys",
-  description: "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim",
+  description:
+    "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, Herdr, and Neovim",
 } as const;

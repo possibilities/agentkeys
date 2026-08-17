@@ -51,7 +51,7 @@ test("leaf help-json projects stable public discovery schema", async () => {
           type: "text",
           required: false,
           positional: false,
-          description: "Filter by canonical modifier or modifier combo",
+          description: "Filter by canonical modifier combo or scope prefix",
         },
         {
           name: "--format",
@@ -84,14 +84,14 @@ test("leaf help-json projects stable public discovery schema", async () => {
     },
     "find-available": {
       name: "find-available",
-      description: "Find priority-safe unused keys for a modifier combo",
+      description: "Find priority-safe unused keys for a modifier combo or scope prefix",
       arguments: [
         {
           name: "--modifier",
           type: "text",
           required: true,
           positional: false,
-          description: "Required modifier combo to check",
+          description: "Required modifier combo or scope prefix to check",
         },
         {
           name: "--layer",
@@ -222,6 +222,18 @@ test("punctuation spelled by name and by symbol is one key", async () => {
 test("CLI cheatsheet, doctor, table, and availability reports", async () => {
   const home = tempHome();
   writeDefaultConfigs(home);
+  writeFixture(
+    home,
+    ".config/herdr/config.toml",
+    [
+      "[keys]",
+      "",
+      "[[keys.command]]",
+      'key = "prefix+l"',
+      'command = "agentsurface launch"',
+      'description = "launch an agent"',
+    ].join("\n"),
+  );
 
   const table = await runCli(["list-bindings", "--format", "table"], {
     HOME: home,
@@ -266,6 +278,34 @@ test("CLI cheatsheet, doctor, table, and availability reports", async () => {
       verdict: "free in your config, but macOS uses it",
     },
   });
+
+  const scoped = await runCli(["explain", "--key", "prefix+l", "--format", "json"], {
+    HOME: home,
+  });
+  expect(scoped.exitCode).toBe(0);
+  expect(JSON.parse(scoped.stdout)).toMatchObject({
+    schema_version: 1,
+    ok: true,
+    error: null,
+    data: {
+      owners: [{ layer: "herdr", action: "launch an agent", verdict: "scoped" }],
+      displacements: [
+        {
+          layer: "herdr",
+          action: "focus_pane_right",
+          displacedBy: { field: "keys.command[0]", action: "launch an agent" },
+        },
+      ],
+      verdict: "taken within herdr by launch an agent; free across layers",
+    },
+  });
+
+  const scopedAvailable = await runCli(
+    ["find-available", "--modifier", "prefix", "--layer", "herdr"],
+    { HOME: home },
+  );
+  expect(scopedAvailable.exitCode).toBe(0);
+  expect(scopedAvailable.stdout).toContain("Available slots for prefix+* at herdr layer");
 });
 
 test("CLI no-match output stays machine-readable for machine formats", async () => {

@@ -67,6 +67,20 @@ export interface BindingRecord {
   source?: string;
 }
 
+// Same-layer precedence is not a Shadow: the displaced default never becomes
+// a live Binding and therefore cannot intercept or block an available slot.
+export interface Displacement {
+  layer: Layer;
+  key: string;
+  action: string;
+  source: string;
+  displacedBy: {
+    action: string;
+    source: string;
+    field: string;
+  };
+}
+
 const SCOPE_PREFIXES = ["prefix+", "space+", "leader+"];
 
 export class Binding {

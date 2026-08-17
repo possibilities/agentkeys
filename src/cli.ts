@@ -24,7 +24,7 @@ import {
 } from "./reports.ts";
 
 const AGENT_TEASER =
-  "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim; detect shadows and find open slots.";
+  "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, Herdr, and Neovim; detect shadows and find open slots.";
 
 const AGENT_HELP = `${PROGRAM.description}.
 
@@ -40,9 +40,9 @@ How it resolves
   nvim/lua/plugins; plus herdr/config.toml (XDG_CONFIG_HOME honored) for
   herdr. Ghostty prefers
   \`ghostty +list-keybinds\` when the binary is installed, because that
-  reports defaults the config file omits. Herdr has no dump command, so its
-  defaults ship vendored from the upstream source and join only when the app
-  is present; its config file overlays the defaults. Missing files contribute
+  reports defaults the config file omits. Herdr prefers
+  \`herdr --default-config\`, with a labeled vendored fallback for older
+  binaries; its config file overlays the defaults. Missing files contribute
   zero bindings; readable but malformed files fail loudly. Every path is
   overridable: AGENTKEYS_KARABINER_CONFIG, AGENTKEYS_SKHD_CONFIG,
   AGENTKEYS_GHOSTTY_CONFIG, AGENTKEYS_GHOSTTY_BIN, AGENTKEYS_HERDR_CONFIG,
@@ -53,9 +53,11 @@ How it resolves
   layers tmux and herdr never see the same keystroke and cannot shadow each
   other. Keys that are local to a layer never conflict across layers: Neovim
   leader and space keys, tmux and herdr prefix and mode keys, and Ghostty
-  chord sequences. A binding that
-  forwards the key onward rather than consuming it — skhd \`* ~\`, Ghostty
-  \`text:\` and \`esc:\` — shadows nothing.
+  chord sequences. A scoped owner is taken within its own table even though it
+  is free across layers. Herdr user bindings displace defaults on the same key;
+  explain reports that Displacement without treating the default as live. A
+  binding that forwards the key onward rather than consuming it — skhd \`* ~\`,
+  Ghostty \`text:\` and \`esc:\` — shadows nothing.
 - Well-known shortcuts owned by software with no readable config (macOS,
   browsers, readline) are reported as advisory reservations, never conflicts.
 
@@ -67,6 +69,8 @@ Workflow
    Everything claiming one chord, across every layer plus reservations.
 3. agentkeys find-available --modifier cmd+shift --layer skhd
    Pick a priority-safe free key before binding anything new.
+   Prefix tables use the same flag: --modifier prefix for tmux and herdr,
+   or --modifier space for this machine's Neovim leader table.
 4. agentkeys list-bindings --layer skhd --modifier cmd+shift --format table
    Verify the result. Default format is json; yaml and table are available.
 5. agentkeys show-cheatsheet
@@ -281,7 +285,8 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
     if (typeof flags.key !== "string") {
       throw new UsageError("explain requires --key");
     }
-    const explanation = explainKey(collectAll().bindings, flags.key);
+    const inventory = collectAll();
+    const explanation = explainKey(inventory.bindings, flags.key, inventory.displacements);
     writeStdout(
       flags.format === "json"
         ? `${JSON.stringify(success(explanation), null, 2)}\n`

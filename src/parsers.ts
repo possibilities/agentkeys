@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { AgentkeysError } from "./errors.ts";
-import { Binding } from "./model.ts";
+import { Binding, type Displacement } from "./model.ts";
 import {
   buildKey,
   normalizeGhosttyKey,
@@ -14,10 +14,12 @@ import {
   normalizeTmuxKey,
 } from "./normalize.ts";
 import {
+  HERDR_ACTION_CONTEXTS,
   HERDR_ACTION_MODES,
   HERDR_DEFAULT_PREFIX,
   HERDR_DEFAULTS,
   HERDR_VERSION,
+  type HerdrDefault,
 } from "./vendored.ts";
 
 function readExistingText(path: string): string | undefined {
@@ -653,7 +655,100 @@ function expandHerdrRange(label: string): string[] {
   return Array.from({ length: to - from + 1 }, (_, index) => `${match[1]}${from + index}`);
 }
 
-export function parseHerdr(path: string): Binding[] {
+interface HerdrDefaultsConfig {
+  prefix: string;
+  defaults: HerdrDefault[];
+  supportedActions?: ReadonlySet<string>;
+}
+
+export interface HerdrDefaultConfig extends HerdrDefaultsConfig {
+  supportedActions: ReadonlySet<string>;
+}
+
+// --default-config is a human-readable template: the table header is live TOML
+// while its values are commented assignments. Only the direct [keys] fields
+// describe built-in actions; the later command and indexed tables are examples.
+export function parseHerdrDefaultConfig(text: string, source: string): HerdrDefaultConfig {
+  const assignments = ["[keys]"];
+  let inKeys = false;
+  let sawKeys = false;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "[keys]") {
+      inKeys = true;
+      sawKeys = true;
+      continue;
+    }
+    if (!inKeys) continue;
+    if (/^(?:#\s*)?\[\[?/.test(trimmed)) break;
+    const assignment = line.match(/^\s*#\s*([a-z][a-z0-9_]*)\s*=\s*(.+)$/i);
+    // The prose introducing [[keys.command]] describes its `type = ...`
+    // choices before the commented table header. It looks assignment-shaped
+    // but is not part of [keys].
+    if (assignment && assignment[1] !== "type") {
+      assignments.push(`${assignment[1]} = ${assignment[2]}`);
+    }
+  }
+
+  if (!sawKeys) {
+    throw new AgentkeysError(
+      `Malformed herdr default config from ${source}: [keys] table not found`,
+      "malformed_config",
+    );
+  }
+
+  let keys: Record<string, unknown>;
+  try {
+    keys = objectValue(objectValue(Bun.TOML.parse(assignments.join("\n"))).keys);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new AgentkeysError(
+      `Malformed herdr default config from ${source}: ${message}`,
+      "malformed_config",
+    );
+  }
+
+  const prefix = typeof keys.prefix === "string" ? keys.prefix.trim() : "";
+  if (prefix === "") {
+    throw new AgentkeysError(
+      `Malformed herdr default config from ${source}: keys.prefix not found`,
+      "malformed_config",
+    );
+  }
+
+  const defaults: HerdrDefault[] = [];
+  const supportedActions = new Set<string>();
+  for (const [action, raw] of Object.entries(keys)) {
+    if (action === "prefix") continue;
+    const labels = herdrValue(raw);
+    if (labels === undefined) {
+      throw new AgentkeysError(
+        `Malformed herdr default config from ${source}: keys.${action} is not a key label`,
+        "malformed_config",
+      );
+    }
+    supportedActions.add(action);
+    defaults.push({ action, keys: labels ?? [] });
+  }
+
+  return { prefix, defaults, supportedActions };
+}
+
+interface HerdrCandidate {
+  binding: Binding;
+  field: string;
+}
+
+interface HerdrParseResult {
+  bindings: Binding[];
+  displacements: Displacement[];
+}
+
+function parseHerdrInventory(
+  path: string,
+  defaultConfig: HerdrDefaultsConfig,
+  defaultsLabel: string,
+): HerdrParseResult {
   const text = readExistingText(path);
   let keys: Record<string, unknown> = {};
   if (text !== undefined) {
@@ -665,12 +760,14 @@ export function parseHerdr(path: string): Binding[] {
     }
   }
 
-  const defaultsLabel = `herdr ${HERDR_VERSION} defaults (vendored)`;
-  const bindings: Binding[] = [];
+  const userCandidates: HerdrCandidate[] = [];
+  const defaultCandidates: HerdrCandidate[] = [];
   const emit = (
+    target: HerdrCandidate[],
     action: string,
     labels: readonly string[],
     fromFile: boolean,
+    field: string,
     mode?: string,
     context?: string,
   ): void => {
@@ -678,8 +775,8 @@ export function parseHerdr(path: string): Binding[] {
       for (const expanded of expandHerdrRange(label)) {
         const key = normalizeHerdrKey(expanded);
         if (key === undefined) continue;
-        bindings.push(
-          new Binding({
+        target.push({
+          binding: new Binding({
             layer: "herdr",
             key,
             action,
@@ -689,7 +786,8 @@ export function parseHerdr(path: string): Binding[] {
             context: context ?? "",
             sourceFile: fromFile ? path : defaultsLabel,
           }),
-        );
+          field,
+        });
       }
     }
   };
@@ -697,33 +795,52 @@ export function parseHerdr(path: string): Binding[] {
   // The prefix is a real global binding, exactly like tmux's: herdr swallows
   // it before any program in its panes sees it.
   const userPrefix = typeof keys.prefix === "string" && keys.prefix.trim() !== "";
-  emit("herdr prefix key", [userPrefix ? String(keys.prefix) : HERDR_DEFAULT_PREFIX], userPrefix);
+  emit(
+    userPrefix ? userCandidates : defaultCandidates,
+    "herdr prefix key",
+    [userPrefix ? String(keys.prefix) : defaultConfig.prefix],
+    userPrefix,
+    "keys.prefix",
+  );
 
   const handled = new Set(["prefix", "command", "indexed"]);
-  for (const entry of HERDR_DEFAULTS) {
+  for (const entry of defaultConfig.defaults) {
     handled.add(entry.action);
     const user = herdrValue(keys[entry.action]);
-    const labels = user === undefined ? entry.keys : (user ?? []);
+    if (user === null) continue;
+    const fromFile = user !== undefined;
     emit(
+      fromFile ? userCandidates : defaultCandidates,
       entry.action,
-      labels,
-      user !== undefined,
+      user ?? entry.keys,
+      fromFile,
+      `keys.${entry.action}`,
       HERDR_ACTION_MODES[entry.action] ?? entry.mode,
-      entry.context,
+      HERDR_ACTION_CONTEXTS[entry.action] ?? entry.context,
     );
   }
 
-  // Fields with no vendored default — unset-by-default actions, newer herdr
-  // builds. The mode map still applies; anything else competes as bound.
+  // A live dump names unset actions with an empty string, so every supported
+  // action was handled above. The fallback predates that capability and keeps
+  // its former permissive behavior for user fields absent from the snapshot.
   for (const [action, raw] of Object.entries(keys)) {
     if (handled.has(action)) continue;
+    if (defaultConfig.supportedActions !== undefined) continue;
     const user = herdrValue(raw);
     if (user === undefined || user === null) continue;
-    emit(action, user, true, HERDR_ACTION_MODES[action]);
+    emit(
+      userCandidates,
+      action,
+      user,
+      true,
+      `keys.${action}`,
+      HERDR_ACTION_MODES[action],
+      HERDR_ACTION_CONTEXTS[action],
+    );
   }
 
   // [[keys.command]] rows bind a chord to a shell command or agent prompt.
-  for (const raw of Array.isArray(keys.command) ? keys.command : []) {
+  for (const [index, raw] of (Array.isArray(keys.command) ? keys.command : []).entries()) {
     const entry = objectValue(raw);
     const labels = herdrValue(entry.key);
     if (labels === undefined || labels === null) continue;
@@ -733,7 +850,7 @@ export function parseHerdr(path: string): Binding[] {
         : typeof entry.command === "string"
           ? entry.command
           : "custom command";
-    emit(description, labels, true);
+    emit(userCandidates, description, labels, true, `keys.command[${index}]`);
   }
 
   // [keys.indexed] holds modifier combos expanded over the 1-9 row as direct
@@ -741,13 +858,55 @@ export function parseHerdr(path: string): Binding[] {
   for (const [group, combo] of Object.entries(objectValue(keys.indexed))) {
     if (typeof combo !== "string" || combo.trim() === "") continue;
     emit(
+      userCandidates,
       `indexed ${group} 1-9`,
       Array.from({ length: 9 }, (_, index) => `${combo}+${index + 1}`),
       true,
+      `keys.indexed.${group}`,
     );
   }
 
-  return bindings;
+  const activeDefaults: HerdrCandidate[] = [];
+  const displacements: Displacement[] = [];
+  for (const candidate of defaultCandidates) {
+    const winner = userCandidates.find(
+      (user) =>
+        user.binding.key === candidate.binding.key && user.binding.mode === candidate.binding.mode,
+    );
+    if (winner === undefined) {
+      activeDefaults.push(candidate);
+      continue;
+    }
+    displacements.push({
+      layer: "herdr",
+      key: candidate.binding.key,
+      action: candidate.binding.action,
+      source: candidate.binding.toRecord().source ?? "",
+      displacedBy: {
+        action: winner.binding.action,
+        source: winner.binding.toRecord().source ?? "",
+        field: winner.field,
+      },
+    });
+  }
+
+  return {
+    bindings: [...userCandidates, ...activeDefaults].map((candidate) => candidate.binding),
+    displacements,
+  };
+}
+
+const HERDR_FALLBACK_CONFIG: HerdrDefaultsConfig = {
+  prefix: HERDR_DEFAULT_PREFIX,
+  defaults: [...HERDR_DEFAULTS],
+};
+
+export function parseHerdr(path: string): Binding[] {
+  return parseHerdrInventory(
+    path,
+    HERDR_FALLBACK_CONFIG,
+    `herdr ${HERDR_VERSION} defaults (vendored fallback)`,
+  ).bindings;
 }
 
 export interface ConfigPaths {
@@ -872,6 +1031,7 @@ export interface LayerSource {
 
 export interface Inventory {
   bindings: Binding[];
+  displacements: Displacement[];
   sources: LayerSource[];
 }
 
@@ -920,37 +1080,56 @@ function collectGhostty(paths: ConfigPaths): {
   };
 }
 
-// Vendored defaults describe an app, not this machine: they only join the
-// inventory when the app is present (binary found or config file written).
-function collectVendored(
-  layer: "herdr",
-  binPath: string,
-  configPath: string,
-  version: string,
-  parse: (path: string) => Binding[],
-): { bindings: Binding[]; source: LayerSource } {
-  const configFound = existsSync(configPath);
-  if (binPath === "" && !configFound) {
+function collectHerdr(paths: ConfigPaths): {
+  bindings: Binding[];
+  displacements: Displacement[];
+  source: LayerSource;
+} {
+  const configFound = existsSync(paths.herdrConfig);
+  if (paths.herdrBin === "" && !configFound) {
     return {
       bindings: [],
+      displacements: [],
       source: {
-        layer,
-        source: `${configPath} (${layer} not installed)`,
+        layer: "herdr",
+        source: `${paths.herdrConfig} (herdr not installed)`,
         found: false,
         bindings: 0,
       },
     };
   }
-  const bindings = parse(configPath);
+
+  let defaultConfig = HERDR_FALLBACK_CONFIG;
+  let defaultsLabel = `herdr ${HERDR_VERSION} defaults (vendored fallback)`;
+  let sourceLabel = `vendored fallback ${HERDR_VERSION} defaults`;
+  if (paths.herdrBin !== "") {
+    const dumped = Bun.spawnSync([paths.herdrBin, "--default-config"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (dumped.success) {
+      const versionResult = Bun.spawnSync([paths.herdrBin, "--version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const version = versionResult.success ? versionResult.stdout.toString().trim() : "";
+      sourceLabel = `${paths.herdrBin} --default-config${version ? ` (${version})` : ""}`;
+      defaultsLabel = sourceLabel;
+      defaultConfig = parseHerdrDefaultConfig(dumped.stdout.toString(), sourceLabel);
+    }
+  }
+
+  const parsed = parseHerdrInventory(paths.herdrConfig, defaultConfig, defaultsLabel);
   return {
-    bindings,
+    bindings: parsed.bindings,
+    displacements: parsed.displacements,
     source: {
-      layer,
+      layer: "herdr",
       source: configFound
-        ? `vendored ${version} defaults + ${configPath}`
-        : `vendored ${version} defaults (${configPath} not found)`,
+        ? `${sourceLabel} + ${paths.herdrConfig}`
+        : `${sourceLabel} (${paths.herdrConfig} not found)`,
       found: true,
-      bindings: bindings.length,
+      bindings: parsed.bindings.length,
     },
   };
 }
@@ -960,13 +1139,7 @@ export function collectAll(paths: Partial<ConfigPaths> = {}): Inventory {
   const karabiner = parseKarabiner(resolved.karabiner);
   const skhd = parseSkhd(resolved.skhd);
   const ghostty = collectGhostty(resolved);
-  const herdr = collectVendored(
-    "herdr",
-    resolved.herdrBin,
-    resolved.herdrConfig,
-    HERDR_VERSION,
-    parseHerdr,
-  );
+  const herdr = collectHerdr(resolved);
   const tmux = tmuxFiles(resolved).filter((file) => existsSync(file));
   const tmuxBindings = parseTmux(tmux);
   const nvim = nvimFiles(resolved).filter((file) => existsSync(file));
@@ -981,6 +1154,7 @@ export function collectAll(paths: Partial<ConfigPaths> = {}): Inventory {
       ...herdr.bindings,
       ...nvimBindings,
     ],
+    displacements: herdr.displacements,
     sources: [
       {
         layer: "karabiner",

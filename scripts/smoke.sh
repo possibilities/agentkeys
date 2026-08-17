@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # End-to-end smoke test: exercises every documented agentkeys command against
-# a throwaway HOME holding synthetic configs for all five layers.
+# a throwaway HOME holding synthetic configs for all six layers.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
@@ -25,6 +25,9 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/agentkeys-smoke.XXXXXX")"
 export HOME="$TMP/home"
 # An empty binary path keeps the Ghostty probe on the fixture config file.
 export AGENTKEYS_GHOSTTY_BIN=""
+# The unit suite covers Herdr's live dump; smoke uses the labeled fallback so
+# it never reaches an installed binary outside the throwaway HOME.
+export AGENTKEYS_HERDR_BIN=""
 mkdir -p "$HOME"
 
 ERR_TMP="$TMP/last-stderr"
@@ -101,10 +104,10 @@ expect_envelope_ok() {
   fi
 }
 
-step "write fixture configs for all five layers"
+step "write fixture configs for all six layers"
 
 mkdir -p "$HOME/.config/karabiner" "$HOME/.config/skhd" "$HOME/.config/ghostty" \
-  "$HOME/.config/tmux/conf.d" "$HOME/.config/nvim/lua/plugins"
+  "$HOME/.config/tmux/conf.d" "$HOME/.config/herdr" "$HOME/.config/nvim/lua/plugins"
 
 cat >"$HOME/.config/karabiner/karabiner.json" <<'JSON'
 {
@@ -168,6 +171,11 @@ cat >"$HOME/.config/tmux/conf.d/local.conf" <<'TMUX'
 bind r source-file ~/.config/tmux/tmux.conf
 TMUX
 
+cat >"$HOME/.config/herdr/config.toml" <<'HERDR'
+[keys]
+next_tab = ["prefix+n", "alt+2"]
+HERDR
+
 cat >"$HOME/.config/nvim/init.lua" <<'LUA'
 vim.keymap.set('n', '<Leader>h', ':help<CR>', { desc = 'Help' })
 vim.keymap.set('n', '<D-S-h>', ':focuswest<CR>', { desc = 'Focus west' })
@@ -206,7 +214,7 @@ step "doctor names every source and finds the planted shadow"
 run doctor
 expect_status 0
 expect_out "## Sources"
-for layer in karabiner skhd ghostty tmux nvim; do
+for layer in karabiner skhd ghostty tmux herdr nvim; do
   expect_out "| $layer |"
 done
 expect_out "## Shadows"

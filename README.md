@@ -20,6 +20,7 @@ Links `$HOME/.local/bin/agentkeys` to this checkout. Set `AGENTKEYS_INSTALL_BIN_
 agentkeys doctor
 agentkeys explain --key cmd+shift+v
 agentkeys find-available --modifier cmd+shift --layer skhd
+agentkeys find-available --modifier prefix --layer herdr
 agentkeys list-bindings --format table
 ```
 
@@ -48,16 +49,20 @@ Each layer is read from the location its own tool documents, so a plain machine 
 | skhd | `~/.config/skhd/skhdrc` |
 | ghostty | `ghostty +list-keybinds`, falling back to `~/.config/ghostty/config` |
 | tmux | `~/.config/tmux/tmux.conf`, its literal `source-file` targets, and `~/.config/tmux/conf.d/*.conf` |
-| herdr | vendored defaults overlaid by `~/.config/herdr/config.toml` (`XDG_CONFIG_HOME` honored), when the app is installed |
+| herdr | `herdr --default-config` overlaid by `~/.config/herdr/config.toml` (`XDG_CONFIG_HOME` honored), with a labeled vendored fallback |
 | nvim | `~/.config/nvim/init.lua` and `~/.config/nvim/lua/plugins/*.lua` |
 
-Ghostty prefers the binary, because its config file holds only what you overrode — the app ships around ninety-five more bindings. Herdr has no dump command, so its defaults are vendored from the upstream source, version-stamped, and joined only when the app is present.
+Ghostty prefers the binary, because its config file holds only what you overrode — the app ships around ninety-five more bindings. Herdr also prefers its installed binary: `--default-config` identifies both current defaults and supported actions even when an untagged build still reports an older version. Older Herdr binaries use a visibly labeled vendored 0.8.0 fallback.
 
-Every path is overridable: `AGENTKEYS_KARABINER_CONFIG`, `AGENTKEYS_SKHD_CONFIG`, `AGENTKEYS_GHOSTTY_CONFIG`, `AGENTKEYS_GHOSTTY_BIN` (empty disables the probe), `AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty treats the app as absent), `AGENTKEYS_TMUX_CONFIG`, and `AGENTKEYS_NVIM_CONFIG`.
+Herdr user Bindings take precedence over defaults on the same Canonical key. The inactive default is a Displacement, not a Binding: `explain` names it, while Shadows and availability consider only the Binding that actually runs.
+
+Every path is overridable: `AGENTKEYS_KARABINER_CONFIG`, `AGENTKEYS_SKHD_CONFIG`, `AGENTKEYS_GHOSTTY_CONFIG`, `AGENTKEYS_GHOSTTY_BIN` (empty disables the probe), `AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty disables the live probe), `AGENTKEYS_TMUX_CONFIG`, and `AGENTKEYS_NVIM_CONFIG`.
 
 Priority follows the hosting paths: tmux and Herdr run inside Ghostty, and Neovim runs directly in Ghostty or inside either multiplexer. Tmux and Herdr never see the same keystroke, so the same key in those sibling layers is never a conflict.
 
 `agentkeys doctor` names every file it read, so a layer whose config is missing never reads as a layer with nothing to report.
+
+`find-available --modifier` also accepts Layer-scoped prefixes: use `prefix` for tmux and Herdr, and `space` for the Neovim leader table on this machine.
 
 ## Develop
 

@@ -1,10 +1,12 @@
 import { afterAll, expect, test } from "bun:test";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import {
   collectAll,
   defaultPaths,
   parseGhostty,
   parseHerdr,
+  parseHerdrDefaultConfig,
   parseKarabiner,
   parseNvim,
   parseSkhd,
@@ -296,7 +298,7 @@ test("Ghostty parser reads triggers, passthrough actions, and unbind", () => {
   ]);
 });
 
-test("herdr parser emits vendored defaults: prefix, prefix-mode keys, ranges, modes", () => {
+test("herdr fallback parser emits prefix, prefix-mode keys, ranges, and modes", () => {
   const root = tempRoot();
   const bindings = parseHerdr(join(root, "missing-config.toml"));
 
@@ -318,6 +320,35 @@ test("herdr parser emits vendored defaults: prefix, prefix-mode keys, ranges, mo
   const switchTab = bindings.filter((binding) => binding.action === "switch_tab");
   expect(switchTab.map((binding) => binding.key)).toEqual(
     Array.from({ length: 9 }, (_, i) => `prefix+${i + 1}`),
+  );
+});
+
+test("herdr default-config parser reads supported actions and ignores command examples", () => {
+  const parsed = parseHerdrDefaultConfig(
+    [
+      "[keys]",
+      '# prefix = "ctrl+b"',
+      '# goto = "prefix+g"',
+      '# move_tab_next = "" # optional',
+      '# navigate_pane_right = "l"',
+      '# type = "shell" runs detached in the background.',
+      "# [[keys.command]]",
+      '# key = "prefix+alt+g"',
+      '# command = "lazygit"',
+      "[server]",
+    ].join("\n"),
+    "fixture herdr --default-config",
+  );
+
+  expect(parsed.prefix).toBe("ctrl+b");
+  expect(parsed.defaults).toEqual([
+    { action: "goto", keys: ["prefix+g"] },
+    { action: "move_tab_next", keys: [] },
+    { action: "navigate_pane_right", keys: ["l"] },
+  ]);
+  expect([...parsed.supportedActions]).toEqual(["goto", "move_tab_next", "navigate_pane_right"]);
+  expect(() => parseHerdrDefaultConfig("[server]\n", "broken dump")).toThrow(
+    "[keys] table not found",
   );
 });
 
@@ -353,7 +384,7 @@ test("herdr parser overlays config.toml: prefix, direct chords, unbinds, command
     ["prefix+n", true],
     ["ctrl+alt+]", false],
   ]);
-  // An empty string unbinds the vendored default.
+  // An empty string unbinds the fallback default.
   expect(bindings.some((binding) => binding.action === "zoom")).toBe(false);
   // Unset-by-default actions bind when the user sets them.
   expect(bindings.some((binding) => binding.key === "prefix+shift+l")).toBe(true);
@@ -367,6 +398,118 @@ test("herdr parser overlays config.toml: prefix, direct chords, unbinds, command
 
   const malformed = writeFixture(root, "broken.toml", "[keys\nprefix=");
   expect(() => parseHerdr(malformed)).toThrow("Malformed herdr TOML");
+});
+
+test("collectAll prefers live herdr defaults and records user displacement", () => {
+  const root = tempRoot();
+  const defaults = writeFixture(
+    root,
+    "herdr-defaults.toml",
+    [
+      "[keys]",
+      '# prefix = "ctrl+b"',
+      '# goto = "prefix+g"',
+      '# move_tab_next = ""',
+      '# focus_pane_right = "prefix+l"',
+      "# [[keys.command]]",
+    ].join("\n"),
+  );
+  const bin = writeFixture(
+    root,
+    "herdr",
+    [
+      "#!/bin/sh",
+      'if [ "$1" = "--default-config" ]; then',
+      `  /bin/cat '${defaults}'`,
+      'elif [ "$1" = "--version" ]; then',
+      '  echo "herdr 9.9.9"',
+      "else",
+      "  exit 2",
+      "fi",
+    ].join("\n"),
+  );
+  chmodSync(bin, 0o755);
+  const config = writeFixture(
+    root,
+    "config.toml",
+    [
+      "[keys]",
+      'move_tab_next = "alt+4"',
+      'unsupported_action = "prefix+u"',
+      "",
+      "[[keys.command]]",
+      'key = "prefix+l"',
+      'command = "agentsurface launch"',
+      'description = "launch an agent"',
+    ].join("\n"),
+  );
+  const inventory = collectAll({
+    ...defaultPaths(root),
+    ghosttyBin: "",
+    herdrBin: bin,
+    herdrConfig: config,
+  });
+
+  expect(inventory.sources.find((source) => source.layer === "herdr")?.source).toBe(
+    `${bin} --default-config (herdr 9.9.9) + ${config}`,
+  );
+  expect(inventory.bindings.some((binding) => binding.action === "move_tab_next")).toBe(true);
+  expect(inventory.bindings.some((binding) => binding.action === "unsupported_action")).toBe(false);
+  expect(inventory.bindings.some((binding) => binding.action === "focus_pane_right")).toBe(false);
+  expect(inventory.displacements).toEqual([
+    {
+      layer: "herdr",
+      key: "prefix+l",
+      action: "focus_pane_right",
+      source: `${bin} --default-config (herdr 9.9.9)`,
+      displacedBy: {
+        action: "launch an agent",
+        source: config,
+        field: "keys.command[0]",
+      },
+    },
+  ]);
+});
+
+test("collectAll labels the vendored herdr fallback when no dump is available", () => {
+  const root = tempRoot();
+  const config = writeFixture(root, "config.toml", "[keys]\nnext_tab = 'prefix+n'\n");
+  const inventory = collectAll({
+    ...defaultPaths(root),
+    ghosttyBin: "",
+    herdrBin: "",
+    herdrConfig: config,
+  });
+
+  expect(inventory.sources.find((source) => source.layer === "herdr")?.source).toBe(
+    `vendored fallback 0.8.0 defaults + ${config}`,
+  );
+});
+
+test("collectAll fails loudly when a successful herdr dump is malformed", () => {
+  const root = tempRoot();
+  const bin = writeFixture(
+    root,
+    "herdr",
+    [
+      "#!/bin/sh",
+      'if [ "$1" = "--default-config" ]; then',
+      '  echo "[server]"',
+      "else",
+      '  echo "herdr 9.9.9"',
+      "fi",
+    ].join("\n"),
+  );
+  chmodSync(bin, 0o755);
+
+  expect(() =>
+    collectAll({
+      ...defaultPaths(root),
+      ghosttyBin: "",
+      herdrBin: bin,
+      herdrConfig: join(root, "missing-herdr.toml"),
+    }),
+  ).toThrow("Malformed herdr default config");
 });
 
 test("collectAll accepts injected paths, reports sources, and treats missing files as empty", () => {

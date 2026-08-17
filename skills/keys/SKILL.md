@@ -94,6 +94,7 @@ Three more constraints that decide more cases than mnemonics do:
 ```bash
 agentkeys explain --key cmd+shift+v      # who owns this chord, across everything
 agentkeys find-available --modifier cmd+shift --layer skhd
+agentkeys find-available --modifier prefix --layer herdr
 ```
 
 `explain` is the call to make for a candidate. It ranks every layer that binds
@@ -102,6 +103,7 @@ the key and ends with a verdict:
 ```
 Verdict: taken by skhd.
 Verdict: taken by skhd, nvim, but only in their listed contexts.
+Verdict: taken within herdr by goto; free across layers.
 Verdict: free in your config, but macOS uses it.
 Verdict: free.
 ```
@@ -111,7 +113,12 @@ Per-binding verdicts: `wins` (claims the key outright), `wins in context`
 elsewhere), `shadowed`, `scoped` (layer-local, cannot collide), `transparent`
 (forwards the key onward).
 
-`find-available` lists free slots for a modifier combo at a target layer,
+Herdr user Bindings take precedence over defaults on the same Canonical key.
+The inactive default is a **Displacement**, not a Binding or a Shadow;
+`explain` lists it beneath the Binding that actually runs.
+
+`find-available` lists free slots for a modifier combo or Layer-scoped prefix
+at a target layer,
 blocking against every layer at or above it, then names the free ones that are
 well known elsewhere. Both are advisory on that last part — see
 [Reservations](#reservations).
@@ -179,6 +186,7 @@ choice, sometimes the right one; making it knowingly is the point.
 agentkeys doctor                                        # sources, then shadows
 agentkeys explain --key cmd+shift+v [--format json]
 agentkeys find-available --modifier cmd+shift --layer skhd
+agentkeys find-available --modifier prefix --layer herdr
 agentkeys list-bindings [--layer L] [--modifier M] [--format json|yaml|table]
 agentkeys show-cheatsheet [--layer L]                   # Markdown, by priority
 ```
@@ -193,7 +201,7 @@ from a misconfigured one:
 | karabiner | /Users/x/.config/karabiner/karabiner.json | 23 |
 | tmux | /Users/x/.config/tmux/tmux.conf (+5 more) | 34 |
 | ghostty | /Applications/Ghostty.app/Contents/MacOS/ghostty +list-keybinds | 95 |
-| herdr | vendored 0.8.0 defaults (/Users/x/.config/herdr/config.toml not found) | 52 |
+| herdr | /Users/x/.local/bin/herdr --default-config (herdr 0.8.0) + /Users/x/.config/herdr/config.toml | 57 |
 ```
 
 Contract: machine formats emit one stable `{schema_version, ok, error, data}`
@@ -201,8 +209,9 @@ envelope on stdout — `list-bindings` in its default json (or yaml), and
 `explain --format json` for one key — use those for scripting. A domain
 failure there is the same envelope with `ok:false` and a snake_case
 `error.code`. Exit 0 success, 2 usage fault (never an envelope), 1 anything
-else. A malformed but readable config fails loudly with `file:line`; a missing
-config contributes nothing.
+else. An explanation includes active owners plus any same-Layer Displacements.
+A malformed but readable config fails loudly with `file:line`; a missing config
+contributes nothing.
 
 ## Where configuration is read from
 
@@ -215,14 +224,14 @@ plus its literal `source-file` targets and `tmux/conf.d/*.conf`,
 Ghostty is read from `ghostty +list-keybinds` when the binary is installed,
 because the config file holds only what the user overrode — the app ships
 around ninety-five defaults, and those are the ones that shadow tmux and
-Neovim. Herdr has no dump command, so its defaults are vendored from the
-upstream source, version-stamped in the doctor source row, and joined only
-when the app is present; its config file overlays the defaults (rebinds
-replace, explicit unbinds delete). Override any path with
+Neovim. Herdr is read from `herdr --default-config`, because an untagged build
+can support actions newer than its reported version; its config file overlays
+those live defaults. A binary without the dump command uses a visibly labeled
+vendored 0.8.0 fallback. Override any path with
 `AGENTKEYS_KARABINER_CONFIG`, `AGENTKEYS_SKHD_CONFIG`,
 `AGENTKEYS_GHOSTTY_CONFIG`, `AGENTKEYS_GHOSTTY_BIN` (empty disables the
-probe), `AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty treats the app as
-absent), `AGENTKEYS_TMUX_CONFIG`, `AGENTKEYS_NVIM_CONFIG`.
+probe), `AGENTKEYS_HERDR_CONFIG`, `AGENTKEYS_HERDR_BIN` (empty disables the
+live probe), `AGENTKEYS_TMUX_CONFIG`, `AGENTKEYS_NVIM_CONFIG`.
 
 ## Blind spots
 
@@ -238,8 +247,8 @@ State these rather than implying coverage the tool does not have:
 - **Karabiner conditions are summarized, not evaluated.** A rule limited to one
   app or the built-in keyboard reports as `wins in context`; whether it fires
   right now depends on state agentkeys cannot see.
-- **Herdr defaults are a vendored snapshot.** A newer app build may
-  have moved a chord; the doctor source row names the vendored version, so
-  compare it against the installed app when something looks off.
+- **Old Herdr binaries use a vendored fallback.** Without `--default-config`,
+  agentkeys cannot prove that an untagged build matches the 0.8.0 snapshot;
+  the doctor source row makes the fallback visible.
 - **Nothing here is written.** agentkeys only reads. Editing the config file is
   a separate, explicit step after the human picks.

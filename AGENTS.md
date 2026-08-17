@@ -27,9 +27,9 @@ actually contain.
   parser converts into the canonical key here and nowhere else.
 - `reserved.ts` is authored data, not parsed: shortcuts owned by software with
   no readable config. Advisory only — a Reservation is never a Shadow.
-- `vendored.ts` is authored data too, but real Bindings: defaults transcribed
-  from Herdr, which has no dump command, version-stamped and verified
-  against a source checkout on refresh.
+- `vendored.ts` is authored fallback data: Herdr 0.8.0 defaults transcribed
+  from source for binaries without `--default-config`, version-stamped and
+  visibly labeled whenever the live source is unavailable.
 - `descriptor.ts` is the single source for commands and flags; help, help-json,
   and validation all fall out of it.
 
@@ -39,9 +39,9 @@ The decisions that shaped the design live in `docs/adr/`, one per file:
 interception order as the priority chain, the Ghostty binary over its config
 file, documented `~/.config` discovery, layer-scoped keys excluded from
 conflicts, passthrough bindings shadowing nothing, interception following
-hosting paths, and vendored defaults for apps without a dump. Read them before
-changing a parser or the conflict logic; append a new numbered record rather
-than editing an old one.
+hosting paths, and live defaults preferred over visibly labeled fallbacks.
+Read them before changing a parser or the conflict logic; append a new numbered
+record rather than editing an old one.
 
 ## The skill
 

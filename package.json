@@ -1,7 +1,7 @@
 {
   "name": "agentkeys",
   "version": "0.1.0",
-  "description": "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, and Neovim",
+  "description": "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, Herdr, and Neovim",
   "private": true,
   "license": "MIT",
   "repository": {

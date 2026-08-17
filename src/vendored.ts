@@ -1,8 +1,8 @@
-// Vendored defaults for Herdr, whose binary exposes no dump command
-// (docs/adr/0007). Transcribed by hand from the upstream sources named per
-// table; chord spellings are verbatim from upstream, and normalize.ts owns
-// turning them into canonical keys. Refresh by re-reading the source when
-// the version stamp falls behind the installed binary.
+// Fallback defaults for Herdr binaries that cannot expose --default-config.
+// The live binary is the source of record; this 0.8.0 snapshot keeps older
+// installations useful while making its age explicit in the source manifest.
+// Chord spellings are verbatim from upstream, and normalize.ts owns turning
+// them into canonical keys.
 
 // From src/config/model.rs KeysConfig::default(). Fields whose default is
 // unset are omitted; the parser still classifies them when a user sets one.
@@ -77,4 +77,8 @@ export const HERDR_ACTION_MODES: Readonly<Record<string, string>> = {
   resize_pane_down: "resize",
   resize_pane_up: "resize",
   resize_pane_right: "resize",
+};
+
+export const HERDR_ACTION_CONTEXTS: Readonly<Record<string, string>> = {
+  remote_image_paste: "remote client only",
 };

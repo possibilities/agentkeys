@@ -3,6 +3,7 @@ import { success } from "./envelope.ts";
 import {
   type Binding,
   bindingsToRecords,
+  type Displacement,
   interceptorsOf,
   intercepts,
   LAYERS,
@@ -342,11 +343,16 @@ export interface KeyOwner {
 export interface KeyExplanation {
   key: string;
   owners: KeyOwner[];
+  displacements: Displacement[];
   reserved: Reservation[];
   verdict: string;
 }
 
-export function explainKey(bindings: readonly Binding[], keyInput: string): KeyExplanation {
+export function explainKey(
+  bindings: readonly Binding[],
+  keyInput: string,
+  displacements: readonly Displacement[] = [],
+): KeyExplanation {
   const parts = keyInput
     .split("+")
     .map((part) => part.trim())
@@ -392,18 +398,29 @@ export function explainKey(bindings: readonly Binding[], keyInput: string): KeyE
   const conditional = distinct(
     owners.filter((owner) => owner.verdict === "wins in context").map((o) => o.layer),
   );
+  const scoped = owners.filter((owner) => owner.verdict === "scoped");
   let verdict: string;
   if (outright.length > 0) {
     verdict = `taken by ${outright.join(", ")}`;
   } else if (conditional.length > 0) {
     verdict = `taken by ${conditional.join(", ")}, but only in their listed contexts`;
+  } else if (scoped.length > 0) {
+    verdict = `taken within ${scoped
+      .map((owner) => `${owner.layer} by ${owner.action}`)
+      .join(", ")}; free across layers`;
   } else if (reserved.length > 0) {
     verdict = `free in your config, but ${reserved[0]?.owner} uses it`;
   } else {
     verdict = "free";
   }
 
-  return { key, owners, reserved, verdict };
+  return {
+    key,
+    owners,
+    displacements: displacements.filter((displacement) => displacement.key === key),
+    reserved,
+    verdict,
+  };
 }
 
 export function renderExplain(explanation: KeyExplanation): string {
@@ -420,6 +437,16 @@ export function renderExplain(explanation: KeyExplanation): string {
       lines.push(
         `  ${owner.layer.padEnd(10)} ${owner.action}${notes ? ` (${notes})` : ""}`,
         `  ${" ".repeat(10)} ${owner.verdict}${owner.source ? ` — ${owner.source}` : ""}`,
+      );
+    }
+  }
+
+  if (explanation.displacements.length > 0) {
+    lines.push("", "Displaced defaults:");
+    for (const displacement of explanation.displacements) {
+      lines.push(
+        `  ${displacement.layer.padEnd(10)} ${displacement.action}${displacement.source ? ` — ${displacement.source}` : ""}`,
+        `  ${" ".repeat(10)} displaced by ${displacement.displacedBy.field} (${displacement.displacedBy.action})${displacement.displacedBy.source ? ` — ${displacement.displacedBy.source}` : ""}`,
       );
     }
   }

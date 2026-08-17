@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { Binding } from "../src/model.ts";
+import { Binding, type Displacement } from "../src/model.ts";
 import { parseSkhd } from "../src/parsers.ts";
 import {
   ALL_KEYS,
@@ -191,6 +191,33 @@ test("explain ranks every layer on a key and names well-known owners", () => {
   expect(reservedOnly.verdict).toBe("free in your config, but macOS uses it");
 });
 
+test("explain names scoped occupancy and same-layer Displacements", () => {
+  const binding = new Binding({
+    layer: "herdr",
+    key: "prefix+l",
+    action: "launch an agent",
+    sourceFile: "config.toml",
+  });
+  const displacement: Displacement = {
+    layer: "herdr",
+    key: "prefix+l",
+    action: "focus_pane_right",
+    source: "herdr --default-config",
+    displacedBy: {
+      action: "launch an agent",
+      source: "config.toml",
+      field: "keys.command[6]",
+    },
+  };
+  const explanation = explainKey([binding], "prefix+l", [displacement]);
+
+  expect(explanation.verdict).toBe("taken within herdr by launch an agent; free across layers");
+  expect(explanation.displacements).toEqual([displacement]);
+  const rendered = renderExplain(explanation);
+  expect(rendered).toContain("Displaced defaults:");
+  expect(rendered).toContain("displaced by keys.command[6] (launch an agent)");
+});
+
 test("availability uses the 69-key universe and priority blocking semantics", () => {
   expect(ALL_KEYS).toHaveLength(69);
   const bindings = [
@@ -211,6 +238,18 @@ test("availability uses the 69-key universe and priority blocking semantics", ()
   expect(availableText).toContain("  Digits:   ");
   expect(availableText).toContain("  Punct:    ");
   expect(availableText).toContain("  Special:  ");
+});
+
+test("availability accepts Layer-scoped prefixes", () => {
+  const bindings = [
+    new Binding({ layer: "herdr", key: "prefix+a", action: "herdr action" }),
+    new Binding({ layer: "tmux", key: "prefix+b", action: "tmux sibling" }),
+  ];
+  const result = findAvailable(bindings, "prefix", "herdr");
+
+  expect(result.available).not.toContain("a");
+  expect(result.available).toContain("b");
+  expect(renderAvailable(result)).toContain("Available slots for prefix+* at herdr layer");
 });
 
 test("availability names free slots that well-known software already uses", () => {

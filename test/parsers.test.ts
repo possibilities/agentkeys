@@ -486,6 +486,23 @@ test("collectAll labels the vendored herdr fallback when no dump is available", 
   );
 });
 
+// resize_pane_* reads like navigate_* and is not: herdr documents those keys
+// as the way to resize *without* entering resize_mode, so a direct chord there
+// competes with every layer above herdr and has to reach conflict detection.
+test("herdr direct resize bindings are not mode-scoped", () => {
+  const root = tempRoot();
+  const config = writeFixture(
+    root,
+    "herdr.toml",
+    ["[keys]", 'prefix = "ctrl+space"', 'resize_pane_left = "alt+shift+h"'].join("\n"),
+  );
+
+  const resize = parseHerdr(config).find((binding) => binding.action === "resize_pane_left");
+  expect(resize?.key).toBe("alt+shift+h");
+  expect(resize?.mode).toBe("");
+  expect(resize?.isLayerScoped).toBe(false);
+});
+
 test("collectAll degrades the herdr layer when a successful dump is malformed", () => {
   const root = tempRoot();
   const skhd = writeFixture(root, "skhdrc", "cmd - a : echo a\n");

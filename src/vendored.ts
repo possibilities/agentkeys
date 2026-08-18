@@ -66,6 +66,11 @@ export const HERDR_DEFAULTS: readonly HerdrDefault[] = [
 
 // Actions that only listen inside a herdr mode keep that mode whatever key a
 // user rebinds them to; everything here mirrors the field docs in model.rs.
+// Only navigate-mode movement belongs here. resize_pane_* looks like its
+// sibling and is not: herdr documents those as the bindings that resize
+// *without* entering resize_mode, so they are direct chords competing with
+// every layer above herdr. Calling them scoped excluded them from conflict
+// detection, which reported a key as safe that a higher layer could steal.
 export const HERDR_ACTION_MODES: Readonly<Record<string, string>> = {
   navigate_workspace_up: "navigate",
   navigate_workspace_down: "navigate",
@@ -73,10 +78,6 @@ export const HERDR_ACTION_MODES: Readonly<Record<string, string>> = {
   navigate_pane_down: "navigate",
   navigate_pane_up: "navigate",
   navigate_pane_right: "navigate",
-  resize_pane_left: "resize",
-  resize_pane_down: "resize",
-  resize_pane_up: "resize",
-  resize_pane_right: "resize",
 };
 
 export const HERDR_ACTION_CONTEXTS: Readonly<Record<string, string>> = {

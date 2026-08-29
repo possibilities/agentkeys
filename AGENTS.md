@@ -49,7 +49,7 @@ record rather than editing an old one.
 ## The skill
 
 `skills/keys/SKILL.md` is the canonical runbook and the surface most agent
-sessions see: AgentStart's skills scan copies it into the default `common` capability pack
+sessions see: AgentStart's skills scan copies it into the fixed private fleet resources
 with `npx skills add --copy` against this checkout, discovering it by the
 nested `skills/<name>/SKILL.md` layout. `--agent-help` is the in-binary
 fallback and points at the same
@@ -77,12 +77,12 @@ re-verifying the skill's claims against the live CLI before editing its prose.
 This checkout is one of the agent* fleet under `~/code`. Shared machinery
 lives in two siblings, and some changes here must cascade:
 
-- Skills under `skills/<name>/` ship into AgentStart's default `common`
-  capability pack (`~/code/agentstart/scripts/sync-skills`, run six-hourly
-  by the scheduled updater). AgentLaunch composes the pack into managed
-  sessions: Claude Code exposes `/agent:<name>`, while Codex uses `$<name>`
-  and Pi uses `/<name>`. A SKILL.md edit is live within six hours, or on
-  demand by running that script. Whether a new skill earns a TOOLS.md
+- Skills under `skills/<name>/` ship into AgentStart's fixed private
+  fleet resources (`~/code/agentstart/scripts/sync-skills`, run six-hourly
+  by the scheduled updater). AgentLaunch loads them into every managed
+  session: Claude Code exposes `/agent:<name>`, Codex uses
+  `$agent:<name>`, and Pi uses `/<name>`. A SKILL.md edit is live within
+  six hours, or on demand by running that script. Whether a new skill earns a TOOLS.md
   advertisement line is a deliberate decision —
   `agentwiki get tool-advertisement-policy`.
 - Adding or removing a call to another fleet tool changes the fleet map:

@@ -24,6 +24,7 @@ const COMMAND_FIELDS = new Set([
   "audience",
   "mutates",
   "guidance",
+  "blocking",
   "arguments",
   "subcommands",
   "stdin",
@@ -41,6 +42,10 @@ const ARGUMENT_FIELDS = new Set([
   "choices",
   "default",
   "aliases",
+  "role",
+  "csv",
+  "minimum",
+  "maximum",
 ]);
 
 test("guide --json emits the contract inside the standard envelope", async () => {

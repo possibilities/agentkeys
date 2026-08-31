@@ -24,10 +24,39 @@ export interface ContractArgument {
   name: string;
   type: ArgumentType;
   description: string;
+  format?: "path" | "url" | "duration" | "ref" | "json";
+  direction?: "in" | "out";
   required?: boolean;
   positional?: boolean;
+  repeatable?: boolean;
+  /** One comma-joined string rather than a repeated flag. Composes with
+   * `repeatable`; when set, `format` describes the ELEMENT. No agentkeys flag
+   * sets this today — every flag is a single scalar — but the schema allows
+   * it and a generated MCP tool needs the type present to map one when a
+   * sibling flag grows it. */
+  csv?: boolean;
   choices?: readonly string[];
   default?: string;
+  aliases?: readonly string[];
+  /** Inclusive bounds for an integer or number argument. Unused today:
+   * agentkeys has no numeric flag. */
+  minimum?: number;
+  maximum?: number;
+  /** Omitted when "call", the schema's own default — a consumer building a
+   * call surface reads its absence as "expose this". */
+  role?: "call" | "output-format" | "store-selection" | "meta";
+}
+
+/** A relation between two or more of a command's own arguments that a
+ * per-argument type cannot state. No agentkeys command declares one today —
+ * every command has at most one required flag — but the mapping in
+ * `mcp-tools.ts` implements all four kinds so a future command that adds one
+ * is mapped correctly rather than silently dropped. */
+export interface ContractConstraint {
+  kind: "one_of" | "at_least_one" | "conflicts" | "requires";
+  arguments: readonly string[];
+  required?: boolean;
+  description?: string;
 }
 
 export interface ContractCommand {
@@ -36,7 +65,41 @@ export interface ContractCommand {
   audience: Audience;
   mutates: boolean;
   guidance?: string;
+  /** The command waits on something outside itself and may not return
+   * promptly. Omitted (defaults false) for every reporting command; `mcp` is
+   * the one command that sets it. */
+  blocking?: boolean;
   arguments: ContractArgument[];
+  constraints?: ContractConstraint[];
+}
+
+/** One sentence stating a constraint in the CLI's own words, with `spell`
+ * translating each contract argument name into however the caller of this
+ * function addresses it (a bare flag for `--help` text, a stripped property
+ * name for an MCP tool description). Shared by both renders so the wording
+ * cannot drift between them. */
+export function constraintSentence(
+  constraint: ContractConstraint,
+  spell: (name: string) => string = (name) => name,
+): string {
+  const members = constraint.arguments.map(spell);
+  const list = members.join(", ");
+  let head: string;
+  switch (constraint.kind) {
+    case "one_of":
+      head = `Give ${constraint.required === true ? "exactly" : "at most"} one of ${list}.`;
+      break;
+    case "at_least_one":
+      head = `Give at least one of ${list}.`;
+      break;
+    case "requires":
+      head = `${members[0]} requires ${members.slice(1).join(", ")}.`;
+      break;
+    case "conflicts":
+      head = `${list} may not be combined.`;
+      break;
+  }
+  return constraint.description === undefined ? head : `${head} ${constraint.description}`;
 }
 
 export interface Contract {
@@ -90,8 +153,10 @@ How it resolves
   \`* ~\`, Ghostty \`text:\` and \`esc:\` — shadows nothing.
 - Well-known shortcuts owned by software with no readable config (macOS,
   browsers, readline) are reported as advisory reservations, never conflicts.
-- Every command is read-only. Nothing here edits a config file; deciding a
-  shortcut is this tool's job, writing it is yours.`;
+- Every reporting command is read-only. Nothing here edits a config file;
+  deciding a shortcut is this tool's job, writing it is yours. \`mcp\` is the
+  one command that is not a report: it serves an MCP session and never exits
+  on its own.`;
 
 const CONCEPTS = {
   model: {
@@ -150,7 +215,9 @@ const CONCEPTS = {
       recovery: "Report it; every expected failure carries a more specific code.",
     },
   ],
-  read_only_commands: COMMANDS.map((command) => command.name),
+  read_only_commands: COMMANDS.filter((command) => command.mutates === false).map(
+    (command) => command.name,
+  ),
   agent_defaults: [
     "agentkeys doctor — which config each layer came from, then the shadows.",
     "agentkeys explain --key cmd+shift+v — everything claiming one chord.",
@@ -168,6 +235,9 @@ function toArgument(flag: FlagDescriptor): ContractArgument {
     ...(flag.required === true ? { required: true } : {}),
     ...(flag.allowed ? { choices: flag.allowed } : {}),
     ...(flag.default === undefined ? {} : { default: flag.default }),
+    // "call" is the schema's own default; publishing it anyway would be a
+    // second spelling of "expose this" that could drift from the default.
+    ...(flag.role === undefined || flag.role === "call" ? {} : { role: flag.role }),
   };
 }
 
@@ -178,6 +248,7 @@ function toCommand(command: CommandDescriptor): ContractCommand {
     audience: command.audience,
     mutates: command.mutates,
     ...(command.guidance === undefined ? {} : { guidance: command.guidance }),
+    ...(command.blocking === undefined ? {} : { blocking: command.blocking }),
     arguments: command.flags.map(toArgument),
   };
 }

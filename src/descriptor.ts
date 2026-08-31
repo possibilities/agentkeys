@@ -3,6 +3,15 @@ import { LAYERS } from "./model.ts";
 
 export type FlagType = "boolean" | "string";
 
+/**
+ * What kind of knob a flag is, in the fleet contract's sense: a `call`
+ * argument is a real parameter; `meta` is a transport concern like `--help`
+ * that a programmatic caller never chooses. Only `help` uses this today, but
+ * the field is named after the contract's own vocabulary rather than
+ * agentkeys inventing a narrower one.
+ */
+export type FlagRole = "call" | "output-format" | "store-selection" | "meta";
+
 export interface FlagDescriptor {
   name: string;
   type: FlagType;
@@ -15,6 +24,8 @@ export interface FlagDescriptor {
   required?: boolean;
   /** The value used when the flag is absent, for the same reason. */
   default?: string;
+  /** Defaults to "call" per the fleet contract when omitted. */
+  role?: FlagRole;
 }
 
 export type Audience = "agent" | "operator" | "internal";
@@ -25,12 +36,17 @@ export interface CommandDescriptor {
   audience: Audience;
   /**
    * Whether a successful call can change durable state anywhere. Every
-   * agentkeys command reads configs and prints; nothing here is true, and a
-   * command that made it true would be a different tool.
+   * reporting command reads configs and prints; nothing there is true. `mcp`
+   * is the one exception: it is not a value calculation, it holds a live
+   * session open, and the fleet contract's own convention marks that mutates
+   * rather than inventing a third state.
    */
   mutates: boolean;
   /** Prose the one-line summary cannot carry. Rendered by help and by guide. */
   guidance?: string;
+  /** The command waits on something outside itself and may not return
+   * promptly. Only `mcp` sets this: it serves until its transport closes. */
+  blocking?: boolean;
   flags: readonly FlagDescriptor[];
 }
 
@@ -47,7 +63,14 @@ const LAYER_FLAG = {
  * each command.
  */
 export const GLOBAL_FLAGS = [
-  { name: "help", type: "boolean", summary: "Show this command's help" },
+  {
+    name: "help",
+    type: "boolean",
+    summary: "Show this command's help",
+    // A terminal concern, not a parameter a programmatic caller chooses —
+    // MCP.md suppresses every non-"call" global from a generated tool schema.
+    role: "meta",
+  },
 ] as const satisfies readonly FlagDescriptor[];
 
 /** Top-level-only flags. Each one renders the contract; none reaches a command. */
@@ -165,6 +188,18 @@ export const COMMANDS = [
         summary: "Emit the contract as one envelope instead of the prose runbook",
       },
     ],
+  },
+  {
+    name: "mcp",
+    summary: "Serve this CLI's agent-audience commands as an MCP stdio server",
+    // Internal: nonsense for an agent to call on itself, and not a report a
+    // human reads either. See MCP.md's "Declaring it".
+    audience: "internal",
+    mutates: true,
+    blocking: true,
+    guidance:
+      "Generated from this same contract: every agent-audience command above becomes one MCP tool, in process, with no subprocess and no second copy of the command list.",
+    flags: [],
   },
 ] as const satisfies readonly CommandDescriptor[];
 

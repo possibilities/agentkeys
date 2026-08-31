@@ -1,12 +1,15 @@
 #!/usr/bin/env bun
 import { stringify } from "yaml";
 import {
-  buildContract,
-  renderAgentHelp,
-  renderCommandHelp,
-  renderTeaser,
-  renderTopHelp,
-} from "./contract.ts";
+  CONTRACT,
+  runDoctor,
+  runExplain,
+  runFindAvailable,
+  runGuide,
+  runListBindings,
+  runShowCheatsheet,
+} from "./commands.ts";
+import { renderAgentHelp, renderCommandHelp, renderTeaser, renderTopHelp } from "./contract.ts";
 import {
   COMMANDS,
   type CommandDescriptor,
@@ -15,24 +18,20 @@ import {
 } from "./descriptor.ts";
 import { failure, success } from "./envelope.ts";
 import { AgentkeysError, UsageError } from "./errors.ts";
+import { serveAgentkeysMcp } from "./mcp.ts";
 import { isLayer, type Layer } from "./model.ts";
-import { collectAll, type Inventory } from "./parsers.ts";
+import type { LayerFailure } from "./parsers.ts";
 import {
   degradedNotice,
-  explainKey,
-  filterBindings,
-  findAvailable,
   type OutputFormat,
   renderAvailable,
   renderBindings,
-  renderCheatsheet,
   renderDoctor,
   renderExplain,
 } from "./reports.ts";
 
-// Every render below reads the one contract this CLI publishes as
-// `guide --json`. There is no hand-written help text in this file.
-const CONTRACT = buildContract();
+// `guide --json` publishes this same build; every render below reads it too.
+// There is no hand-written help text in this file.
 
 type ParsedFlags = Record<string, string | boolean>;
 
@@ -128,19 +127,18 @@ function asFormat(value: unknown): OutputFormat {
 
 // Where a Degraded layer gets announced. A human report carries it on stdout,
 // beside the answer it qualifies; a machine format cannot, because its stdout
-// is one fixed envelope, so it goes to stderr. "report" is for the commands
-// that render the degradation themselves. Never both, or a terminal shows the
-// same warning twice.
-function takeInventory(notify: "stdout" | "stderr" | "report"): Inventory {
-  const inventory = collectAll();
-  const notice = notify === "report" ? "" : degradedNotice(inventory.degraded);
-  if (notice === "") return inventory;
-  if (notify === "stdout") writeStdout(`${notice}\n`);
+// is one fixed envelope, so it goes to stderr. Never both, or a terminal
+// shows the same warning twice. Each command below decides its own target
+// (or, like doctor and explain's text render, embeds the notice itself and
+// calls neither).
+function announceDegraded(degraded: readonly LayerFailure[], target: "stdout" | "stderr"): void {
+  const notice = degradedNotice(degraded);
+  if (notice === "") return;
+  if (target === "stdout") writeStdout(`${notice}\n`);
   else writeStderr(notice);
-  return inventory;
 }
 
-function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
+async function dispatch(command: CommandDescriptor, flags: ParsedFlags): Promise<number> {
   if (flags.help === true) {
     writeStdout(renderCommandHelp(CONTRACT, command.name));
     return 0;
@@ -149,38 +147,37 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   if (command.name === "guide") {
     writeStdout(
       flags.json === true
-        ? `${JSON.stringify(success(CONTRACT), null, 2)}\n`
+        ? `${JSON.stringify(success(runGuide()), null, 2)}\n`
         : renderAgentHelp(CONTRACT),
     );
     return 0;
   }
 
   if (command.name === "list-bindings") {
-    // The json and yaml envelopes are a fixed shape, so their degradation
-    // notice stays on stderr; the table is a human report and carries it.
-    const inventory = takeInventory(asFormat(flags.format) === "table" ? "stdout" : "stderr");
-    const bindings = filterBindings(inventory.bindings, {
+    const result = runListBindings({
       layer: asLayer(flags.layer),
       modifier: typeof flags.modifier === "string" ? flags.modifier : undefined,
     });
-    writeStdout(renderBindings(bindings, asFormat(flags.format)));
+    // The json and yaml envelopes are a fixed shape, so their degradation
+    // notice stays on stderr; the table is a human report and carries it.
+    const format = asFormat(flags.format);
+    announceDegraded(result.degraded, format === "table" ? "stdout" : "stderr");
+    writeStdout(renderBindings(result.bindings, format));
     return 0;
   }
 
   if (command.name === "show-cheatsheet") {
-    const allBindings = takeInventory("stdout").bindings;
-    const filtered = filterBindings(allBindings, {
-      layer: asLayer(flags.layer),
-    });
-    writeStdout(renderCheatsheet(filtered, allBindings));
+    const result = runShowCheatsheet({ layer: asLayer(flags.layer) });
+    announceDegraded(result.degraded, "stdout");
+    writeStdout(result.markdown);
     return 0;
   }
 
   if (command.name === "doctor") {
     // The source table names every unreadable layer already; a second copy
-    // above it would say the same thing twice.
-    const inventory = takeInventory("report");
-    writeStdout(renderDoctor(inventory.bindings, inventory.sources));
+    // above it would say the same thing twice, so no announceDegraded here.
+    const result = runDoctor();
+    writeStdout(renderDoctor(result.bindings, result.sources));
     return 0;
   }
 
@@ -189,9 +186,9 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
     if (!layer || typeof flags.modifier !== "string") {
       throw new UsageError("find-available requires --modifier and --layer");
     }
-    writeStdout(
-      renderAvailable(findAvailable(takeInventory("stdout").bindings, flags.modifier, layer)),
-    );
+    const result = runFindAvailable({ modifier: flags.modifier, layer });
+    announceDegraded(result.degraded, "stdout");
+    writeStdout(renderAvailable(result));
     return 0;
   }
 
@@ -199,20 +196,24 @@ function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
     if (typeof flags.key !== "string") {
       throw new UsageError("explain requires --key");
     }
+    const explanation = runExplain({ key: flags.key });
     // renderExplain prints the notice itself, and the json envelope carries it
-    // as data.degraded.
-    const inventory = takeInventory(flags.format === "json" ? "stderr" : "report");
-    const explanation = explainKey(
-      inventory.bindings,
-      flags.key,
-      inventory.displacements,
-      inventory.degraded,
-    );
+    // as data.degraded; the json branch is the only one that still owes a
+    // stderr announcement.
+    if (flags.format === "json") announceDegraded(explanation.degraded, "stderr");
     writeStdout(
       flags.format === "json"
         ? `${JSON.stringify(success(explanation), null, 2)}\n`
         : renderExplain(explanation),
     );
+    return 0;
+  }
+
+  if (command.name === "mcp") {
+    // Blocking: this returns only when the host closes stdio. Nothing above
+    // this branch may still be buffered to stdout — it is the protocol
+    // channel for the rest of the process's life.
+    await serveAgentkeysMcp();
     return 0;
   }
 
@@ -234,7 +235,7 @@ function machineFormat(
   return undefined;
 }
 
-export function main(argv = process.argv.slice(2)): number {
+export async function main(argv = process.argv.slice(2)): Promise<number> {
   let format: "json" | "yaml" | undefined;
   try {
     const top = parseTop(argv);
@@ -243,7 +244,7 @@ export function main(argv = process.argv.slice(2)): number {
     if (!command) throw new UsageError(`Unknown command: ${top.command}`);
     const flags = parseFlags(top.rest, command);
     format = machineFormat(command, flags);
-    return dispatch(command, flags);
+    return await dispatch(command, flags);
   } catch (error) {
     if (error instanceof UsageError) {
       writeStderr(`${error.message}\n`);
@@ -271,5 +272,5 @@ export function main(argv = process.argv.slice(2)): number {
 }
 
 if (import.meta.main) {
-  process.exit(main());
+  main().then((code) => process.exit(code));
 }

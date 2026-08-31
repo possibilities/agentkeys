@@ -200,15 +200,16 @@ expect_status 0
 expect_out "Layer priority"
 expect_out "schema_version"
 
-for command in list-bindings show-cheatsheet doctor find-available explain; do
+for command in list-bindings show-cheatsheet doctor find-available explain guide; do
   run "$command" --help
   expect_status 0
   expect_out "agentkeys $command"
-
-  run "$command" --help-json
-  expect_status 0
-  expect_out "\"name\": \"$command\""
 done
+
+run guide --json
+expect_status 0
+expect_out "\"contract_version\": 1"
+expect_out "\"audience\": \"agent\""
 
 step "doctor names every source and finds the planted shadow"
 run doctor

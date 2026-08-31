@@ -32,8 +32,17 @@ actually contain.
 - `vendored.ts` is authored fallback data: Herdr 0.8.0 defaults transcribed
   from source for binaries without `--default-config`, version-stamped and
   visibly labeled whenever the live source is unavailable.
-- `descriptor.ts` is the single source for commands and flags; help, help-json,
-  and validation all fall out of it.
+- `descriptor.ts` is the single source for commands and flags; parsing,
+  validation, and the contract's mechanical layer all fall out of it. A flag's
+  choices and default live in `allowed` and `default`, never spelled again in
+  its summary.
+- `contract.ts` is the authored conceptual layer — purpose, guidance, model,
+  envelope, exit codes, error codes — and assembles both halves into the fleet
+  agent contract that `guide --json` publishes. `--help`, `--agent-help`, and
+  `--agent-teaser` are renders of it, so there is no help text anywhere else:
+  a second authorship of any of this is the bug the contract exists to
+  prevent. An error code raised in `parsers.ts` must appear in
+  `concepts.error_codes`.
 
 ## Load-bearing decisions
 

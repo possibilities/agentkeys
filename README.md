@@ -27,10 +27,17 @@ agentkeys list-bindings --format table
 ## For agents
 
 ```bash
-agentkeys --agent-teaser              # one line
-agentkeys --agent-help                # the runbook
-agentkeys list-bindings --help-json   # machine-readable flags, per command
+agentkeys --agent-teaser   # one line
+agentkeys guide            # the runbook
+agentkeys guide --json     # the fleet agent contract, version 1
 ```
+
+`guide --json` is the one authored description of this CLI: every command,
+every argument with its type, choices and default, the envelope, the exit
+codes, and every `error.code`. `--help`, `--agent-help`, and `--agent-teaser`
+are renders of it, so there is nothing to keep in step by hand. It replaces the
+per-command `--help-json`, which described one command at a time and invented
+its own vocabulary to do it.
 
 Machine formats emit the stable `{schema_version, ok, error, data}` envelope
 on stdout: `list-bindings` in json (the default) or yaml, and `explain

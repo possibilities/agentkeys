@@ -1,11 +1,17 @@
 #!/usr/bin/env bun
 import { stringify } from "yaml";
 import {
+  buildContract,
+  renderAgentHelp,
+  renderCommandHelp,
+  renderTeaser,
+  renderTopHelp,
+} from "./contract.ts";
+import {
   COMMANDS,
   type CommandDescriptor,
   type FlagDescriptor,
-  PROGRAM,
-  TOP_LEVEL_FLAGS,
+  GLOBAL_FLAGS,
 } from "./descriptor.ts";
 import { failure, success } from "./envelope.ts";
 import { AgentkeysError, UsageError } from "./errors.ts";
@@ -24,72 +30,9 @@ import {
   renderExplain,
 } from "./reports.ts";
 
-const AGENT_TEASER =
-  "Inventory keyboard shortcuts across Karabiner, skhd, Ghostty, tmux, Herdr, and Neovim; detect shadows and find open slots.";
-
-const AGENT_HELP = `${PROGRAM.description}.
-
-When to use
-- Before assigning a hotkey: check whether the combo is already taken in any layer.
-- When a shortcut misfires: find which higher-priority layer shadows it.
-- When surveying what is bound: list bindings or render the cheatsheet.
-
-How it resolves
-- Reads each layer from the location its own tool documents, under
-  $HOME/.config: karabiner/karabiner.json, skhd/skhdrc, ghostty/config,
-  tmux/tmux.conf plus tmux/conf.d/*.conf, and nvim/init.lua plus
-  nvim/lua/plugins; plus herdr/config.toml (XDG_CONFIG_HOME honored) for
-  herdr. Ghostty prefers
-  \`ghostty +list-keybinds\` when the binary is installed, because that
-  reports defaults the config file omits. Herdr prefers
-  \`herdr --default-config\`, with a labeled vendored fallback for older
-  binaries; its config file overlays the defaults. Missing files contribute
-  zero bindings; a readable but malformed file fails loudly for its own layer
-  only — the command still answers from the layers that parsed, names the
-  degraded ones, and says the verdict was computed without them. Every path is
-  overridable: AGENTKEYS_KARABINER_CONFIG, AGENTKEYS_SKHD_CONFIG,
-  AGENTKEYS_GHOSTTY_CONFIG, AGENTKEYS_GHOSTTY_BIN, AGENTKEYS_HERDR_CONFIG,
-  AGENTKEYS_HERDR_BIN, AGENTKEYS_TMUX_CONFIG, AGENTKEYS_NVIM_CONFIG.
-- Layer priority is interception order along hosting paths: karabiner > skhd >
-  Ghostty, then what it hosts — tmux or herdr — then nvim. A higher layer
-  shadows the same canonical key in a lower one on the same path. Sibling
-  layers tmux and herdr never see the same keystroke and cannot shadow each
-  other. Keys that are local to a layer never conflict across layers: Neovim
-  leader and space keys, tmux and herdr prefix and mode keys, and Ghostty
-  chord sequences. A scoped owner is taken within its own table even though it
-  is free across layers. Herdr user bindings displace defaults on the same key;
-  explain reports that Displacement without treating the default as live. A
-  binding that forwards the key onward rather than consuming it — skhd \`* ~\`,
-  Ghostty \`text:\` and \`esc:\` — shadows nothing.
-- Well-known shortcuts owned by software with no readable config (macOS,
-  browsers, readline) are reported as advisory reservations, never conflicts.
-
-Workflow
-1. agentkeys doctor
-   Report which config each layer was read from, then shadowed and
-   conditionally shadowed shortcuts.
-2. agentkeys explain --key cmd+shift+v
-   Everything claiming one chord, across every layer plus reservations.
-3. agentkeys find-available --modifier cmd+shift --layer skhd
-   Pick a priority-safe free key before binding anything new.
-   Prefix tables use the same flag: --modifier prefix for tmux and herdr,
-   or --modifier space for this machine's Neovim leader table.
-4. agentkeys list-bindings --layer skhd --modifier cmd+shift --format table
-   Verify the result. Default format is json; yaml and table are available.
-5. agentkeys show-cheatsheet
-   Markdown overview of every binding, grouped by layer priority.
-
-Contract
-- Machine formats emit one stable {schema_version, ok, error, data} envelope
-  on stdout: list-bindings --format json (the default) or yaml, and
-  explain --format json for a single key. A domain failure there is the same
-  envelope with ok:false and a snake_case error.code.
-- A degraded run still exits 0 with a real answer. Every command names the
-  unreadable layers on stderr; explain --format json also carries them in
-  data.degraded, and doctor lists them under "Unreadable layers".
-- Exit codes: 0 success, 2 usage fault, 1 any other failure. A usage fault
-  exits before the command runs and is never an envelope.
-- agentkeys <command> --help-json prints machine-readable flags per command.`;
+// Every render below reads the one contract this CLI publishes as
+// `guide --json`. There is no hand-written help text in this file.
+const CONTRACT = buildContract();
 
 type ParsedFlags = Record<string, string | boolean>;
 
@@ -101,73 +44,12 @@ function writeStderr(text: string): void {
   process.stderr.write(text);
 }
 
-function renderFlag(flag: FlagDescriptor): string {
-  const value = flag.type === "string" ? ` <${flag.name.toUpperCase()}>` : "";
-  const required = flag.required ? " Required." : "";
-  return `  --${flag.name}${value}\n      ${flag.summary}.${required}`;
-}
-
-function topHelp(): string {
-  return `${PROGRAM.name}: ${PROGRAM.description}
-
-Usage:
-  agentkeys <command> [options]
-
-Commands:
-${COMMANDS.map((command) => `  ${command.name.padEnd(16)} ${command.summary}`).join("\n")}
-
-Options:
-${TOP_LEVEL_FLAGS.map(renderFlag).join("\n")}
-
-Run \`agentkeys <command> --help\` for command flags, and
-\`agentkeys --agent-help\` for the agent runbook.
-`;
-}
-
-function commandHelp(command: CommandDescriptor): string {
-  return `${PROGRAM.name} ${command.name}: ${command.summary}
-
-Usage:
-  agentkeys ${command.name} [options]
-
-Options:
-${command.flags.map(renderFlag).join("\n")}
-`;
-}
-
-type HelpArgument = {
-  name: string;
-  type: "choice" | "text" | "flag";
-  required: boolean;
-  choices?: readonly string[];
-  positional: false;
-  description: string;
-};
-
-function helpJson(command: CommandDescriptor): string {
-  const implementationFlags = new Set(["help", "help-json"]);
-  const args: HelpArgument[] = command.flags
-    .filter((flag) => !implementationFlags.has(flag.name))
-    .map((flag) => ({
-      name: `--${flag.name}`,
-      type: flag.type === "boolean" ? "flag" : flag.allowed ? "choice" : "text",
-      required: flag.required === true,
-      ...(flag.allowed ? { choices: flag.allowed } : {}),
-      positional: false,
-      description: flag.summary,
-    }));
-  return `${JSON.stringify(
-    { name: command.name, description: command.summary, arguments: args },
-    null,
-    2,
-  )}\n`;
-}
-
 function commandByName(name: string): CommandDescriptor | undefined {
   return COMMANDS.find((command) => command.name === name);
 }
 
-function flagByName(flags: readonly FlagDescriptor[], name: string): FlagDescriptor | undefined {
+function flagByName(descriptor: CommandDescriptor, name: string): FlagDescriptor | undefined {
+  const flags: readonly FlagDescriptor[] = [...GLOBAL_FLAGS, ...descriptor.flags];
   return flags.find((flag) => flag.name === name);
 }
 
@@ -178,7 +60,7 @@ function parseFlags(args: readonly string[], descriptor: CommandDescriptor): Par
     if (!arg.startsWith("--")) throw new UsageError(`Unexpected argument: ${arg}`);
     const [rawName, inlineValue] = arg.slice(2).split("=", 2);
     const name = rawName ?? "";
-    const flag = flagByName(descriptor.flags, name);
+    const flag = flagByName(descriptor, name);
     if (!flag) throw new UsageError(`Unknown option for ${descriptor.name}: --${name}`);
     if (flag.type === "boolean") {
       if (inlineValue !== undefined) {
@@ -200,7 +82,7 @@ function parseFlags(args: readonly string[], descriptor: CommandDescriptor): Par
     values[name] = value;
   }
 
-  if (values.help === true || values["help-json"] === true) return values;
+  if (values.help === true) return values;
   for (const flag of descriptor.flags) {
     if (flag.required === true && values[flag.name] === undefined) {
       throw new UsageError(`Missing required option: --${flag.name}`);
@@ -214,20 +96,20 @@ function parseTop(args: readonly string[]): {
   rest: string[];
 } {
   if (args.length === 0) {
-    writeStdout(topHelp());
+    writeStdout(renderTopHelp(CONTRACT));
     return { rest: [] };
   }
   const [first, ...rest] = args;
   if (first === "--help" || first === "-h") {
-    writeStdout(topHelp());
+    writeStdout(renderTopHelp(CONTRACT));
     return { command: undefined, rest: [] };
   }
   if (first === "--agent-teaser") {
-    writeStdout(`${AGENT_TEASER}\n`);
+    writeStdout(renderTeaser(CONTRACT));
     return { command: undefined, rest: [] };
   }
   if (first === "--agent-help") {
-    writeStdout(`${AGENT_HELP}\n`);
+    writeStdout(renderAgentHelp(CONTRACT));
     return { command: undefined, rest: [] };
   }
   if (first?.startsWith("--")) throw new UsageError(`Unknown option: ${first}`);
@@ -260,11 +142,16 @@ function takeInventory(notify: "stdout" | "stderr" | "report"): Inventory {
 
 function dispatch(command: CommandDescriptor, flags: ParsedFlags): number {
   if (flags.help === true) {
-    writeStdout(commandHelp(command));
+    writeStdout(renderCommandHelp(CONTRACT, command.name));
     return 0;
   }
-  if (flags["help-json"] === true) {
-    writeStdout(helpJson(command));
+
+  if (command.name === "guide") {
+    writeStdout(
+      flags.json === true
+        ? `${JSON.stringify(success(CONTRACT), null, 2)}\n`
+        : renderAgentHelp(CONTRACT),
+    );
     return 0;
   }
 
@@ -343,6 +230,7 @@ function machineFormat(
     return format === "table" ? undefined : format;
   }
   if (command.name === "explain" && flags.format === "json") return "json";
+  if (command.name === "guide" && flags.json === true) return "json";
   return undefined;
 }
 

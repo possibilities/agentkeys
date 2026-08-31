@@ -15,7 +15,7 @@ Two jobs, and the second one is the reason this skill exists.
 
 Verified against agentkeys 0.1.0. The CLI is self-describing — when this
 document and the installed binary disagree, the binary wins; check
-`agentkeys --help` and `agentkeys <command> --help-json`.
+`agentkeys --help` and `agentkeys guide --json`, the fleet agent contract.
 
 ## The rule
 

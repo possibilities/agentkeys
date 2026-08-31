@@ -29,110 +29,6 @@ test("top-level and leaf help are descriptor-backed", async () => {
   expect(leaf.stdout).toContain("--layer");
 });
 
-const LAYER_CHOICES = ["karabiner", "skhd", "ghostty", "tmux", "herdr", "nvim"];
-const LAYER_SUMMARY = "Filter to a binding layer: karabiner|skhd|ghostty|tmux|herdr|nvim";
-
-test("leaf help-json projects stable public discovery schema", async () => {
-  const expected = {
-    "list-bindings": {
-      name: "list-bindings",
-      description: "List keyboard bindings across all layers",
-      arguments: [
-        {
-          name: "--layer",
-          type: "choice",
-          required: false,
-          choices: LAYER_CHOICES,
-          positional: false,
-          description: LAYER_SUMMARY,
-        },
-        {
-          name: "--modifier",
-          type: "text",
-          required: false,
-          positional: false,
-          description: "Filter by canonical modifier combo or scope prefix",
-        },
-        {
-          name: "--format",
-          type: "choice",
-          required: false,
-          choices: ["json", "yaml", "table"],
-          positional: false,
-          description: "Output format: json|yaml|table (default json)",
-        },
-      ],
-    },
-    "show-cheatsheet": {
-      name: "show-cheatsheet",
-      description: "Show Markdown bindings grouped by layer priority",
-      arguments: [
-        {
-          name: "--layer",
-          type: "choice",
-          required: false,
-          choices: LAYER_CHOICES,
-          positional: false,
-          description: LAYER_SUMMARY,
-        },
-      ],
-    },
-    doctor: {
-      name: "doctor",
-      description: "Report shadowed and conditionally shadowed shortcuts",
-      arguments: [],
-    },
-    "find-available": {
-      name: "find-available",
-      description: "Find priority-safe unused keys for a modifier combo or scope prefix",
-      arguments: [
-        {
-          name: "--modifier",
-          type: "text",
-          required: true,
-          positional: false,
-          description: "Required modifier combo or scope prefix to check",
-        },
-        {
-          name: "--layer",
-          type: "choice",
-          required: true,
-          choices: LAYER_CHOICES,
-          positional: false,
-          description: `Required target layer: ${LAYER_CHOICES.join("|")}`,
-        },
-      ],
-    },
-    explain: {
-      name: "explain",
-      description: "Show every layer and well-known app claiming one key",
-      arguments: [
-        {
-          name: "--key",
-          type: "text",
-          required: true,
-          positional: false,
-          description: "Required key or chord to explain, such as cmd+shift+v",
-        },
-        {
-          name: "--format",
-          type: "choice",
-          required: false,
-          choices: ["text", "json"],
-          positional: false,
-          description: "Output format: text|json (default text)",
-        },
-      ],
-    },
-  };
-
-  for (const [command, schema] of Object.entries(expected)) {
-    const result = await runCli([command, "--help-json"]);
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual(schema);
-  }
-});
-
 test("top-level agent discovery flags work", async () => {
   const teaser = await runCli(["--agent-teaser"]);
   expect(teaser.exitCode).toBe(0);
@@ -141,6 +37,15 @@ test("top-level agent discovery flags work", async () => {
   const help = await runCli(["--agent-help"]);
   expect(help.exitCode).toBe(0);
   expect(help.stdout).toContain("Layer priority");
+  expect(help.stdout).toContain("malformed_config");
+});
+
+// --help-json is gone; guide --json is the one machine-readable description,
+// and it carries every command rather than one at a time.
+test("the retired --help-json is a usage fault", async () => {
+  const result = await runCli(["list-bindings", "--help-json"]);
+  expect(result.exitCode).toBe(2);
+  expect(result.stderr).toContain("Unknown option");
 });
 
 test("CLI lists, filters, and renders default JSON", async () => {

@@ -48,7 +48,11 @@ export function createAgentkeysMcpServer(): McpServer {
 function callTool(tool: AgentTool, args: Record<string, unknown>): CallToolResult {
   try {
     const data = runCommand(tool.command.name, args);
-    return { content: [{ type: "text", text: JSON.stringify(success(data), null, 2) }] };
+    const envelope = success(data);
+    return {
+      structuredContent: { ...envelope },
+      content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
+    };
   } catch (error) {
     return toolError(error);
   }
@@ -82,6 +86,20 @@ function toolError(error: unknown): CallToolResult {
   ).error_codes.find((candidate) => candidate.code === domain.code);
   const lines = [`${domain.code}: ${domain.message}`];
   if (entry?.recovery !== undefined) lines.push(`recovery: ${entry.recovery}`);
-  lines.push(JSON.stringify(failure(domain), null, 2));
-  return { isError: true, content: [{ type: "text", text: lines.join("\n") }] };
+  const envelope = {
+    ...failure(domain),
+    error: {
+      code: domain.code,
+      message: domain.message,
+      ...(entry?.recovery === undefined ? {} : { recovery: entry.recovery }),
+    },
+  };
+  return {
+    isError: true,
+    structuredContent: { ...envelope },
+    content: [
+      { type: "text", text: lines.join("\n") },
+      { type: "text", text: JSON.stringify(envelope, null, 2) },
+    ],
+  };
 }

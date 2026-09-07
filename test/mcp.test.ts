@@ -180,6 +180,7 @@ describe("a live stdio server", () => {
     };
     expect(result.isError ?? false).toBe(false);
     const envelope = JSON.parse(result.content[0]!.text);
+    expect(result).toHaveProperty("structuredContent", envelope);
     expect(envelope).toMatchObject({ schema_version: 1, ok: true, error: null });
     expect(envelope.data).toHaveProperty("sources");
     expect(envelope.data).toHaveProperty("conflicts");
@@ -192,6 +193,7 @@ describe("a live stdio server", () => {
     };
     expect(result.isError ?? false).toBe(false);
     const envelope = JSON.parse(result.content[0]!.text);
+    expect(result).toHaveProperty("structuredContent", envelope);
     expect(envelope.data).toMatchObject({ contract_version: 1 });
   });
 
@@ -216,6 +218,7 @@ describe("a live stdio server", () => {
     })) as { isError?: boolean; content: { text: string }[] };
     expect(result.isError ?? false).toBe(false);
     const envelope = JSON.parse(result.content[0]!.text);
+    expect(result).toHaveProperty("structuredContent", envelope);
     expect(envelope.ok).toBe(true);
   });
 });

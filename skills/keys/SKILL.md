@@ -5,10 +5,12 @@ description: Choose and audit keyboard shortcuts with the agentkeys CLI — the 
 
 # Keys — choose a shortcut that fits the action
 
-Use AgentKeys through Executor: discover `agentkeys`, describe the selected
-tool, and read `guide` when its model or coverage is unfamiliar. Executor
-normalizes hyphenated tool names, such as `find_available` and `list_bindings`;
-use the discovered path and property names.
+Use the `agentkeys` MCP server directly. Select the tool from the harness's
+catalog or tool search, inspect its input schema, and call it with JSON
+arguments. The host may prefix tool names with the server name. `guide`
+provides the installed command contract and recovery guidance.
+Native tool names include `find_available` and `list_bindings`; hyphenated
+argument names remain exact JSON property names.
 
 The tools report bindings and interception. The design work is deciding which
 reachable, context-appropriate chord to choose. A free chord alone is not a
@@ -66,10 +68,10 @@ path, then verify the actual shortcut in the relevant context.
 
 ## Interpret the result correctly
 
-Check Executor's outer result and the MCP envelope `{schema_version, ok, error,
-data}`. Prefer structured content or the standalone JSON text block. A refused
-MCP result may be carried in Executor's `error.details.content`; use its error
-code and recovery rather than parsing terminal prose.
+Inspect MCP `isError` and AgentKeys's `{schema_version, ok, error, data}`
+envelope in `structuredContent`. If the host returns only content blocks,
+parse the standalone JSON block and keep diagnostic prose separate. Read
+`error.code` and `recovery` before retrying or claiming success.
 
 A successful call can still have incomplete coverage. Check `data.degraded`
 on JSON explanations and the source/degradation information from `doctor`.

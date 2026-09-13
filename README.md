@@ -1,3 +1,5 @@
+> *Slop Made With Sweat: Made with a lot of love by someone who loves code but read none of it.*
+
 # AgentKeys
 
 [![CI](https://github.com/possibilities/agentkeys/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/possibilities/agentkeys/actions/workflows/ci.yml)
